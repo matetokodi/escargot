@@ -1,6 +1,6 @@
 [submodule "third_party/GCutil"]
     path = third_party/GCutil
-    url = https://github.com/Samsung/gcutil.git
+    url = https://github.com/matetokodi/gcutil.git
     ignore = untracked
 [submodule "test/vendortest"]
     path = test/vendortest
