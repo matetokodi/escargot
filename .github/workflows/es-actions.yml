@@ -110,508 +110,508 @@ jobs:
         disable-animations: true
         script: cd build/android/;./gradlew connectedDebugAndroidTest -DESCARGOT_BUILD_TLS_ACCESS_BY_PTHREAD_KEY=ON
 
-  build-by-clang:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: recursive
-    - name: Install Packages
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y ninja-build gcc-multilib g++-multilib libicu-dev
-    - name: Build x86
-      env:
-        BUILD_OPTIONS: -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=x86 -DESCARGOT_MODE=debug -DESCARGOT_WASM=ON -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TLS_ACCESS_BY_ADDRESS=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
-      run: |
-        CC=clang CXX=clang++ cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/clang/x86 $BUILD_OPTIONS
-        ninja -Cout/clang/x86
-    - name: Build x64
-      env:
-        BUILD_OPTIONS: -DESCARGOT_MODE=debug -DESCARGOT_WASM=ON -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TLS_ACCESS_BY_ADDRESS=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
-      run: |
-        CC=clang CXX=clang++ cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/clang/x64 $BUILD_OPTIONS
-        ninja -Cout/clang/x64
-        $RUNNER --engine="./out/clang/x64/escargot" new-es
-
-  test-on-windows-clang-cl:
-    runs-on: windows-2022
-    strategy:
-      matrix:
-        # clang-cl with cannot generate c++ exception code well
-        # if clang-cl bug fixed, we can add x64
-        # clang version and STL version are sometimes not matched in github actions,
-        # so I add -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
-        arch: [
-          {cpu: "x86", flag: "-m32 -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH"}
-          #, {cpu: "x64", flag: "-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH"}
-          ]
-    steps:
-    - name: Set git cllf config
-      run: |
-        git config --global core.autocrlf input
-        git config --global core.eol lf
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
-    - uses: szenius/set-timezone@v2.0
-      with:
-        timezoneWindows: "Pacific Standard Time"
-    - uses: lukka/get-cmake@latest
-      with:
-        cmakeVersion: "~3.25.0"
-    - uses: GuillaumeFalourd/setup-windows10-sdk-action@v2
-      with:
-        sdk-version: 20348
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-    - name: Install msvc redist package
-      run: |
-        (new-object System.Net.WebClient).DownloadFile('https://github.com/abbodi1406/vcredist/releases/download/v0.73.0/VisualCppRedist_AIO_x86_x64.exe','VisualCppRedist_AIO_x86_x64.exe')
-        .\VisualCppRedist_AIO_x86_x64.exe /y
-    - uses: ilammy/msvc-dev-cmd@v1.13.0
-      with:
-        arch: ${{ matrix.arch.cpu }}
-        sdk: "10.0.20348.0"
-    - uses: egor-tensin/setup-clang@v1
-      with:
-        version: 19.1.7
-        platform: ${{ matrix.arch.cpu }}
-    - name: Build ${{ matrix.arch.cpu }} Release
-      run: |
-        CMake -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_VERSION:STRING="10.0" -DCMAKE_SYSTEM_PROCESSOR=${{ matrix.arch.cpu }} -Bout/ -DESCARGOT_OUTPUT=shell -DESCARGOT_LIBICU_SUPPORT=ON -DESCARGOT_THREADING=ON -DESCARGOT_TCO=ON -DESCARGOT_TEST=ON -G Ninja -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_BUILD_TYPE=release -DCMAKE_C_FLAGS="${{ matrix.arch.flag }}" -DCMAKE_CXX_FLAGS="${{ matrix.arch.flag }}"
-        CMake --build out/ --config Release
-    - name: Run octane
-      run: |
-        copy test\octane\*.js
-        dir
-        .\out\escargot.exe run.js
-    # clang-cl with cannot generate c++ exception code well. if clang-cl bug fixed, we can enable test262
-    # - name: Run test262
-    #   run: |
-    #      set GC_FREE_SPACE_DIVISOR=1
-    #      pip install chardet
-    #      python tools\run-tests.py --engine=%cd%\out\escargot.exe test262 --test262-extra-arg="--skip Temporal --skip intl402 --skip Atomics"
-    #   shell: cmd
-    - if: ${{ failure() }}
-      uses: mxschmitt/action-tmate@v3
-      timeout-minutes: 15
-
-  test-on-windows-x86-x64:
-    runs-on: windows-2022
-    strategy:
-      matrix:
-        arch: [x86, x64]
-    steps:
-    - name: Set git cllf config
-      run: |
-        git config --global core.autocrlf input
-        git config --global core.eol lf
-    - uses: actions/checkout@v4
-      with:
-        submodules: recursive
-    - uses: szenius/set-timezone@v2.0
-      with:
-        timezoneWindows: "Pacific Standard Time"
-    - uses: lukka/get-cmake@latest
-      with:
-        cmakeVersion: "~3.25.0"  # <--= optional, use most recent 3.25.x version
-    - uses: GuillaumeFalourd/setup-windows10-sdk-action@v2
-      with:
-        sdk-version: 20348
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-    - name: Install msvc redist package
-      run: |
-        (new-object System.Net.WebClient).DownloadFile('https://github.com/abbodi1406/vcredist/releases/download/v0.73.0/VisualCppRedist_AIO_x86_x64.exe','VisualCppRedist_AIO_x86_x64.exe')
-        .\VisualCppRedist_AIO_x86_x64.exe /y
-    - uses: ilammy/msvc-dev-cmd@v1.13.0
-      with:
-        arch: ${{ matrix.arch }}
-        sdk: "10.0.20348.0"
-    - name: Build ${{ matrix.arch }} Release
-      run: |
-        CMake -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_VERSION:STRING="10.0" -DCMAKE_SYSTEM_PROCESSOR=${{ matrix.arch }} -DESCARGOT_ARCH=${{ matrix.arch }} -Bout/ -DESCARGOT_OUTPUT=shell -DESCARGOT_LIBICU_SUPPORT=ON -DESCARGOT_WASM=ON -DESCARGOT_THREADING=ON -DESCARGOT_TCO=ON -DESCARGOT_TEST=ON -G Ninja -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DCMAKE_BUILD_TYPE=release
-        CMake --build out/ --config Release
-    # windows internal ICU doesn't support Temporal and intl402 well
-    # github action windows runner only have 2 CPUs. that's why I disable Atomics(timeout occured with some tests)
-    - name: Run test262
-      run: |
-        set GC_FREE_SPACE_DIVISOR=1
-        pip install chardet
-        python tools\run-tests.py --engine=%cd%\out\escargot.exe test262 --test262-extra-arg="--skip Temporal --skip intl402 --skip Atomics --skip sm"
-      shell: cmd
-    - name: Run octane
-      run: |
-        copy test\octane\*.js
-        dir
-        .\out\escargot.exe run.js
-    - if: ${{ failure() }}
-      uses: mxschmitt/action-tmate@v3
-      timeout-minutes: 15
-
-  build-on-windows-x64-uwp-x86-shared:
-    runs-on: windows-2022
-    steps:
-    - name: Set git cllf config
-      run: |
-        git config --global core.autocrlf input
-        git config --global core.eol lf
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
-    - uses: lukka/get-cmake@latest
-      with:
-        cmakeVersion: "~3.25.0"  # <--= optional, use most recent 3.25.x version
-    - uses: GuillaumeFalourd/setup-windows10-sdk-action@v2
-      with:
-        sdk-version: 20348
-    - uses: ilammy/msvc-dev-cmd@v1.13.0
-      with:
-        arch: x64
-        sdk: "10.0.20348.0"
-        uwp: true
-    - name: Build x64 UWP Release
-      run: |
-        CMake -G "Visual Studio 17 2022" -DCMAKE_SYSTEM_NAME=WindowsStore -DCMAKE_SYSTEM_VERSION:STRING="10.0" -DCMAKE_SYSTEM_PROCESSOR=x64 -Bout/win64_release_uwp/ -DESCARGOT_OUTPUT=shell -DESCARGOT_LIBICU_SUPPORT=ON -DESCARGOT_TEST=ON
-        CMake --build out\win64_release_uwp --config Release
-      shell: cmd
-    - uses: ilammy/msvc-dev-cmd@v1.13.0
-      with:
-        arch: x86
-        sdk: "10.0.20348.0"
-    - name: Build x86 DLL Release
-      run: |
-        CMake -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_VERSION:STRING="10.0" -DCMAKE_SYSTEM_PROCESSOR=x86 -Bout/win32_release_shared/ -DESCARGOT_OUTPUT=shared_lib -DESCARGOT_LIBICU_SUPPORT=ON -DESCARGOT_THREADING=ON -DESCARGOT_TCO=ON -DESCARGOT_TEST=ON -G Ninja -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DCMAKE_BUILD_TYPE=release
-        CMake --build out/win32_release_shared --config Release
-      shell: cmd
-    - if: ${{ failure() }}
-      uses: mxschmitt/action-tmate@v3
-      timeout-minutes: 15
-
-  build-test-on-x86-release:
-    runs-on: ubuntu-22.04
-    strategy:
-      matrix:
-        tc: ['new-es octane', 'v8 chakracore spidermonkey', 'jetstream-only-simple-parallel-1', 'jetstream-only-simple-parallel-2 jsc-stress', 'jetstream-only-simple-parallel-3 jetstream-only-cdjs']
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
-    - name: Install Packages
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y ninja-build gcc-multilib g++-multilib python2
-        # set python2
-        sudo update-alternatives --install /usr/bin/python python /usr/bin/python2 1
-    - name: Install ICU
-      run: |
-        wget http://mirrors.kernel.org/ubuntu/pool/main/i/icu/libicu-dev_70.1-2ubuntu1_i386.deb
-        wget http://mirrors.kernel.org/ubuntu/pool/main/i/icu/libicu70_70.1-2ubuntu1_i386.deb
-        dpkg -X libicu-dev_70.1-2ubuntu1_i386.deb $GITHUB_WORKSPACE/icu32
-        dpkg -X libicu70_70.1-2ubuntu1_i386.deb $GITHUB_WORKSPACE/icu32
-    - name: Build x86
-      env:
-        BUILD_OPTIONS: -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=x86 -DESCARGOT_THREADING=ON -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TLS_ACCESS_BY_ADDRESS=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
-      run: |
-        export CXXFLAGS="-I$GITHUB_WORKSPACE/icu32/usr/include"
-        export LDFLAGS="-L$GITHUB_WORKSPACE/icu32/usr/lib/i386-linux-gnu -Wl,-rpath=$GITHUB_WORKSPACE/icu32/usr/lib/i386-linux-gnu"
-        export PKG_CONFIG_PATH=$GITHUB_WORKSPACE/icu32/usr/lib/i386-linux-gnu/pkgconfig
-        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/release/x86 $BUILD_OPTIONS
-        ninja -Cout/release/x86
-    - name: Run release-x86 test
-      env:
-        GC_FREE_SPACE_DIVISOR: 1
-      run: LD_LIBRARY_PATH=$GITHUB_WORKSPACE/icu32/usr/lib/i386-linux-gnu $RUNNER --arch=x86 --engine="$GITHUB_WORKSPACE/out/release/x86/escargot" ${{ matrix.tc }}
-    - if: ${{ failure() }}
-      uses: mxschmitt/action-tmate@v3
-      timeout-minutes: 15
-
-  build-test-on-x64-release:
-    runs-on: ubuntu-22.04
-    strategy:
-      matrix:
-        tc: ['octane v8 web-tooling-benchmark', 'chakracore spidermonkey new-es']
-        build_opt: ['', '-DESCARGOT_THREADING=ON -DESCARGOT_TCO=ON', '-DESCARGOT_SMALL_CONFIG=ON -DESCARGOT_USE_CUSTOM_LOGGING=ON']
-        exclude:
-          # exclude octane, v8, web-tooling-benchmark due to low performance incurred by SMALL_CONFIG
-          - tc: 'octane v8 web-tooling-benchmark'
-            build_opt: '-DESCARGOT_SMALL_CONFIG=ON -DESCARGOT_USE_CUSTOM_LOGGING=ON'
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
-    - name: Install Packages
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y ninja-build libicu-dev python2
-        sudo update-alternatives --install /usr/bin/python python /usr/bin/python2 1
-    - name: Build x64
-      env:
-        BUILD_OPTIONS: -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TLS_ACCESS_BY_ADDRESS=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
-      run: |
-        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/release/x64 $BUILD_OPTIONS ${{ matrix.build_opt }}
-        ninja -Cout/release/x64
-    - name: Run release-x64 test
-      env:
-        GC_FREE_SPACE_DIVISOR: 1
-      run: |
-        # set locale
-        sudo locale-gen en_US.UTF-8
-        export LANG=en_US.UTF-8
-        locale
-        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/release/x64/escargot" ${{ matrix.tc }}
-    - if: ${{ failure() }}
-      uses: mxschmitt/action-tmate@v3
-      timeout-minutes: 15
-
-  build-test-on-x86-x64-debug:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
-    - name: Install Packages
-      run: |
-        # for i386 ICU
-        sudo dpkg --add-architecture i386
-        sudo apt-get update
-        sudo apt-get install -y ninja-build gcc-multilib g++-multilib
-        sudo apt-get install -y libicu-dev:i386 # install i386 ICU
-    - name: Build x86/x64
-      env:
-        BUILD_OPTIONS_X86: -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=x86 -DESCARGOT_MODE=debug -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TLS_ACCESS_BY_ADDRESS=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
-        BUILD_OPTIONS_X64: -DESCARGOT_MODE=debug -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TLS_ACCESS_BY_ADDRESS=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
-      run: |
-        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/debug/x86 $BUILD_OPTIONS_X86
-        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/debug/x64 $BUILD_OPTIONS_X64
-        ninja -Cout/debug/x86
-        ninja -Cout/debug/x64
-    - name: Run debug-mode test
-      run: |
-        $RUNNER --arch=x86 --engine="$GITHUB_WORKSPACE/out/debug/x86/escargot" modifiedVendorTest regression-tests new-es intl sunspider-js
-        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/debug/x64/escargot" modifiedVendorTest regression-tests new-es intl sunspider-js
-
-  build-test-on-self-hosted-linux:
-    runs-on: [self-hosted, linux, x64]
-    timeout-minutes: 60
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
-    - name: Build
-      env:
-        BUILD_OPTIONS: -DESCARGOT_THREADING=ON -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TLS_ACCESS_BY_ADDRESS=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
-      run: |
-        LDFLAGS=" -L/usr/icu77-32/lib/ -Wl,-rpath=/usr/icu77-32/lib/" PKG_CONFIG_PATH="/usr/icu77-32/lib/pkgconfig/" cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H./ -Bbuild/out_linux -DESCARGOT_ARCH=x86 -DESCARGOT_MODE=debug -DESCARGOT_TCO_DEBUG=ON $BUILD_OPTIONS
-        LDFLAGS=" -L/usr/icu77-32/lib/ -Wl,-rpath=/usr/icu77-32/lib/" PKG_CONFIG_PATH="/usr/icu77-32/lib/pkgconfig/" cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H./ -Bbuild/out_linux_release -DESCARGOT_ARCH=x86 $BUILD_OPTIONS
-        gcc -shared -m32 -fPIC -o backtrace-hooking-32.so tools/test/test262/backtrace-hooking.c
-        LDFLAGS=" -L/usr/icu77-64/lib/ -Wl,-rpath=/usr/icu77-64/lib/" PKG_CONFIG_PATH="/usr/icu77-64/lib/pkgconfig/" cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H./ -Bbuild/out_linux64 -DESCARGOT_ARCH=x64 -DESCARGOT_MODE=debug -DESCARGOT_TCO_DEBUG=ON $BUILD_OPTIONS
-        LDFLAGS=" -L/usr/icu77-64/lib/ -Wl,-rpath=/usr/icu77-64/lib/" PKG_CONFIG_PATH="/usr/icu77-64/lib/pkgconfig/" cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H./ -Bbuild/out_linux64_release -DESCARGOT_ARCH=x64 -DESCARGOT_MODE=release $BUILD_OPTIONS
-        cmake --build build/out_linux/
-        cmake --build build/out_linux64/
-        cmake --build build/out_linux_release/
-        cmake --build build/out_linux64_release/
-    - name: Test
-      run: |
-        LD_LIBRARY_PATH=/usr/icu77-32/lib/ GC_FREE_SPACE_DIVISOR=1 $RUNNER --arch=x86 --engine="${{ github.workspace }}/build/out_linux_release/escargot" test262
-        LD_LIBRARY_PATH=/usr/icu77-32/lib/ GC_FREE_SPACE_DIVISOR=1 ESCARGOT_LD_PRELOAD=${{ github.workspace }}/backtrace-hooking-32.so $RUNNER --arch=x86 --engine="${{ github.workspace }}/build/out_linux/escargot" test262
-        LD_LIBRARY_PATH=/usr/icu77-64/lib/ GC_FREE_SPACE_DIVISOR=1 $RUNNER --arch=x86_64 --engine="${{ github.workspace }}/build/out_linux64_release/escargot" test262
-        LD_LIBRARY_PATH=/usr/icu77-64/lib/ python tools/kangax/run-kangax.py --engine="${{ github.workspace }}/build/out_linux64/escargot"
-
-  build-test-on-self-hosted-arm-linux:
-    runs-on: [self-hosted, linux, arm]
-    timeout-minutes: 60
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
-    - name: Build
-      run: |
-        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H./ -Bout -DCMAKE_C_COMPILER=gcc-11 -DCMAKE_CXX_COMPILER=g++-11 -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=arm32 -DESCARGOT_MODE=release -DESCARGOT_THREADING=ON -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TLS_ACCESS_BY_ADDRESS=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
-        cmake --build ./out/
-    - name: Test
-      run: |
-        GC_FREE_SPACE_DIVISOR=1 $RUNNER --engine="${{ github.workspace }}/out/escargot" --test262-extra-arg="--skip intl402 --skip sm" new-es v8 spidermonkey chakracore test262
-
-  build-test-on-self-hosted-arm64-linux:
-    runs-on: [self-hosted, linux, arm64]
-    timeout-minutes: 60
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
-    - name: Build
-      run: |
-        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H./ -Bout -DESCARGOT_MODE=release -DESCARGOT_THREADING=ON -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
-        cmake --build ./out/
-    - name: Test
-      run: |
-        GC_FREE_SPACE_DIVISOR=1 $RUNNER --engine="${{ github.workspace }}/out/escargot" --test262-extra-arg="--skip intl402 --skip sm" test262 chakracore spidermonkey v8 new-es
-
-  build-test-on-riscv64-release:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
-    - name: Build in riscv64 container
-      uses: uraimo/run-on-arch-action@v2.8.1
-      with:
-        arch: riscv64
-        distro: ubuntu22.04
-
-        # Install deps into the container. With the token, the container will be cached
-        # The image is cached publically like a package
-        githubToken: ${{ github.token }}
-
-        install: |
-          apt-get update
-          apt-get install -y cmake build-essential ninja-build pkg-config python3 git libicu-dev
-        run: |
-          cmake -H. -Bout/riscv64 -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
-          ninja -Cout/riscv64
-          python3 ./tools/run-tests.py --engine="./out/riscv64/escargot" regression-tests new-es intl sunspider-js
-
-  build-test-debugger:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
-    - name: Install Packages
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y ninja-build
-    - name: Build
-      env:
-        BUILD_OPTIONS: -DESCARGOT_MODE=debug -DESCARGOT_DEBUGGER=1 -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
-      run: |
-        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/debugger $BUILD_OPTIONS
-        ninja -Cout/debugger
-    - name: Debugger Test
-      run: |
-        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/debugger/escargot" debugger-server-source
-        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/debugger/escargot" debugger-client-source
-
-  build-test-api:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
-    - name: Install Packages
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y ninja-build gcc-multilib g++-multilib
-    - name: Build x86/x64
-      env:
-        BUILD_OPTIONS_X86: -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=x86 -DESCARGOT_MODE=debug -DESCARGOT_THREADING=ON -DESCARGOT_DEBUGGER=1 -DESCARGOT_USE_EXTENDED_API=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=cctest -GNinja
-        BUILD_OPTIONS_X64: -DESCARGOT_MODE=debug -DESCARGOT_THREADING=1 -DESCARGOT_DEBUGGER=1 -DESCARGOT_USE_EXTENDED_API=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=cctest -GNinja
-      run: |
-        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/cctest/x86 $BUILD_OPTIONS_X86
-        ninja -Cout/cctest/x86
-        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/cctest/x64 $BUILD_OPTIONS_X64
-        ninja -Cout/cctest/x64
-    - name: Run Test
-      run: |
-        $RUNNER --arch=x86 --engine="$GITHUB_WORKSPACE/out/cctest/x86/cctest" cctest
-        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/cctest/x64/cctest" cctest
-
-  build-test-codecache:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
-    - name: Install Packages
-      run: |
-        # for i386 ICU
-        sudo dpkg --add-architecture i386
-        sudo apt-get update
-        sudo apt-get install -y ninja-build gcc-multilib g++-multilib
-        sudo apt-get install -y libicu-dev:i386 # install i386 ICU
-    - name: Build x86
-      env:
-        BUILD_OPTIONS: -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=x86 -DESCARGOT_MODE=debug -DESCARGOT_CODE_CACHE=ON -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
-      run: |
-        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/codecache/x86 $BUILD_OPTIONS
-        ninja -Cout/codecache/x86
-    - name: Build x64
-      env:
-        BUILD_OPTIONS: -DESCARGOT_MODE=debug -DESCARGOT_CODE_CACHE=ON -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
-      run: |
-        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/codecache/x64 $BUILD_OPTIONS
-        ninja -Cout/codecache/x64
-    - name: Build x64 Release Mode
-      env:
-        BUILD_OPTIONS: -DESCARGOT_MODE=release -DESCARGOT_CODE_CACHE=ON -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
-      run: |
-        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/codecache/release/x64 $BUILD_OPTIONS
-        ninja -Cout/codecache/release/x64
-    - name: Run x86 test
-      run: |
-        $RUNNER --arch=x86 --engine="$GITHUB_WORKSPACE/out/codecache/x86/escargot" sunspider-js
-        $RUNNER --arch=x86 --engine="$GITHUB_WORKSPACE/out/codecache/x86/escargot" sunspider-js
-        $RUNNER --arch=x86 --engine="$GITHUB_WORKSPACE/out/codecache/x86/escargot" new-es
-        $RUNNER --arch=x86 --engine="$GITHUB_WORKSPACE/out/codecache/x86/escargot" new-es
-        $RUNNER --arch=x86 --engine="$GITHUB_WORKSPACE/out/codecache/x86/escargot" octane-loading
-        $RUNNER --arch=x86 --engine="$GITHUB_WORKSPACE/out/codecache/x86/escargot" octane-loading
-        rm -rf $HOME/Escargot-cache/
-    - name: Run x64 test
-      run: |
-        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/codecache/x64/escargot" sunspider-js
-        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/codecache/x64/escargot" sunspider-js
-        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/codecache/x64/escargot" new-es
-        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/codecache/x64/escargot" new-es
-        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/codecache/x64/escargot" octane-loading
-        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/codecache/x64/escargot" octane-loading
-        rm -rf $HOME/Escargot-cache/
-    - name: Run x64 release test
-      run: |
-        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/codecache/release/x64/escargot" web-tooling-benchmark
-        rm -rf $HOME/Escargot-cache/
-    - name: Handle error cases
-      run: |
-        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/codecache/x64/escargot" sunspider-js
-        rm $HOME/Escargot-cache/2728638815_17149
-        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/codecache/x64/escargot" sunspider-js
-        ls -1q $HOME/Escargot-cache/ | wc -l
-        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/codecache/x64/escargot" sunspider-js
-        rm $HOME/Escargot-cache/cache_list
-        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/codecache/x64/escargot" sunspider-js
-    - if: ${{ failure() }}
-      uses: mxschmitt/action-tmate@v3
-      timeout-minutes: 15
-
-  build-test-wasmjs:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: recursive
-    - name: Install Packages
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y ninja-build gcc-multilib g++-multilib
-    - name: Build x86
-      env:
-        BUILD_OPTIONS: -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=x86 -DESCARGOT_MODE=debug -DESCARGOT_WASM=ON -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
-      run: |
-        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/wasm/x86 $BUILD_OPTIONS
-        ninja -Cout/wasm/x86
-    - name: Build x64
-      env:
-        BUILD_OPTIONS: -DESCARGOT_MODE=debug -DESCARGOT_WASM=ON -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
-      run: |
-        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/wasm/x64 $BUILD_OPTIONS
-        ninja -Cout/wasm/x64
-    - name: Run x86 test
-      run: $RUNNER --arch=x86 --engine="$GITHUB_WORKSPACE/out/wasm/x86/escargot" wasm-js
-    - name: Run x64 test
-      run: $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/wasm/x64/escargot" wasm-js
-    - if: ${{ failure() }}
-      uses: mxschmitt/action-tmate@v3
-      timeout-minutes: 60
+#  build-by-clang:
+#    runs-on: ubuntu-latest
+#    steps:
+#    - uses: actions/checkout@v4
+#      with:
+#        submodules: recursive
+#    - name: Install Packages
+#      run: |
+#        sudo apt-get update
+#        sudo apt-get install -y ninja-build gcc-multilib g++-multilib libicu-dev
+#    - name: Build x86
+#      env:
+#        BUILD_OPTIONS: -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=x86 -DESCARGOT_MODE=debug -DESCARGOT_WASM=ON -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TLS_ACCESS_BY_ADDRESS=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
+#      run: |
+#        CC=clang CXX=clang++ cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/clang/x86 $BUILD_OPTIONS
+#        ninja -Cout/clang/x86
+#    - name: Build x64
+#      env:
+#        BUILD_OPTIONS: -DESCARGOT_MODE=debug -DESCARGOT_WASM=ON -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TLS_ACCESS_BY_ADDRESS=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
+#      run: |
+#        CC=clang CXX=clang++ cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/clang/x64 $BUILD_OPTIONS
+#        ninja -Cout/clang/x64
+#        $RUNNER --engine="./out/clang/x64/escargot" new-es
+#
+#  test-on-windows-clang-cl:
+#    runs-on: windows-2022
+#    strategy:
+#      matrix:
+#        # clang-cl with cannot generate c++ exception code well
+#        # if clang-cl bug fixed, we can add x64
+#        # clang version and STL version are sometimes not matched in github actions,
+#        # so I add -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
+#        arch: [
+#          {cpu: "x86", flag: "-m32 -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH"}
+#          #, {cpu: "x64", flag: "-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH"}
+#          ]
+#    steps:
+#    - name: Set git cllf config
+#      run: |
+#        git config --global core.autocrlf input
+#        git config --global core.eol lf
+#    - uses: actions/checkout@v4
+#      with:
+#        submodules: true
+#    - uses: szenius/set-timezone@v2.0
+#      with:
+#        timezoneWindows: "Pacific Standard Time"
+#    - uses: lukka/get-cmake@latest
+#      with:
+#        cmakeVersion: "~3.25.0"
+#    - uses: GuillaumeFalourd/setup-windows10-sdk-action@v2
+#      with:
+#        sdk-version: 20348
+#    - uses: actions/setup-python@v5
+#      with:
+#        python-version: '3.11'
+#    - name: Install msvc redist package
+#      run: |
+#        (new-object System.Net.WebClient).DownloadFile('https://github.com/abbodi1406/vcredist/releases/download/v0.73.0/VisualCppRedist_AIO_x86_x64.exe','VisualCppRedist_AIO_x86_x64.exe')
+#        .\VisualCppRedist_AIO_x86_x64.exe /y
+#    - uses: ilammy/msvc-dev-cmd@v1.13.0
+#      with:
+#        arch: ${{ matrix.arch.cpu }}
+#        sdk: "10.0.20348.0"
+#    - uses: egor-tensin/setup-clang@v1
+#      with:
+#        version: 19.1.7
+#        platform: ${{ matrix.arch.cpu }}
+#    - name: Build ${{ matrix.arch.cpu }} Release
+#      run: |
+#        CMake -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_VERSION:STRING="10.0" -DCMAKE_SYSTEM_PROCESSOR=${{ matrix.arch.cpu }} -Bout/ -DESCARGOT_OUTPUT=shell -DESCARGOT_LIBICU_SUPPORT=ON -DESCARGOT_THREADING=ON -DESCARGOT_TCO=ON -DESCARGOT_TEST=ON -G Ninja -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_BUILD_TYPE=release -DCMAKE_C_FLAGS="${{ matrix.arch.flag }}" -DCMAKE_CXX_FLAGS="${{ matrix.arch.flag }}"
+#        CMake --build out/ --config Release
+#    - name: Run octane
+#      run: |
+#        copy test\octane\*.js
+#        dir
+#        .\out\escargot.exe run.js
+#    # clang-cl with cannot generate c++ exception code well. if clang-cl bug fixed, we can enable test262
+#    # - name: Run test262
+#    #   run: |
+#    #      set GC_FREE_SPACE_DIVISOR=1
+#    #      pip install chardet
+#    #      python tools\run-tests.py --engine=%cd%\out\escargot.exe test262 --test262-extra-arg="--skip Temporal --skip intl402 --skip Atomics"
+#    #   shell: cmd
+#    - if: ${{ failure() }}
+#      uses: mxschmitt/action-tmate@v3
+#      timeout-minutes: 15
+#
+#  test-on-windows-x86-x64:
+#    runs-on: windows-2022
+#    strategy:
+#      matrix:
+#        arch: [x86, x64]
+#    steps:
+#    - name: Set git cllf config
+#      run: |
+#        git config --global core.autocrlf input
+#        git config --global core.eol lf
+#    - uses: actions/checkout@v4
+#      with:
+#        submodules: recursive
+#    - uses: szenius/set-timezone@v2.0
+#      with:
+#        timezoneWindows: "Pacific Standard Time"
+#    - uses: lukka/get-cmake@latest
+#      with:
+#        cmakeVersion: "~3.25.0"  # <--= optional, use most recent 3.25.x version
+#    - uses: GuillaumeFalourd/setup-windows10-sdk-action@v2
+#      with:
+#        sdk-version: 20348
+#    - uses: actions/setup-python@v5
+#      with:
+#        python-version: '3.11'
+#    - name: Install msvc redist package
+#      run: |
+#        (new-object System.Net.WebClient).DownloadFile('https://github.com/abbodi1406/vcredist/releases/download/v0.73.0/VisualCppRedist_AIO_x86_x64.exe','VisualCppRedist_AIO_x86_x64.exe')
+#        .\VisualCppRedist_AIO_x86_x64.exe /y
+#    - uses: ilammy/msvc-dev-cmd@v1.13.0
+#      with:
+#        arch: ${{ matrix.arch }}
+#        sdk: "10.0.20348.0"
+#    - name: Build ${{ matrix.arch }} Release
+#      run: |
+#        CMake -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_VERSION:STRING="10.0" -DCMAKE_SYSTEM_PROCESSOR=${{ matrix.arch }} -DESCARGOT_ARCH=${{ matrix.arch }} -Bout/ -DESCARGOT_OUTPUT=shell -DESCARGOT_LIBICU_SUPPORT=ON -DESCARGOT_WASM=ON -DESCARGOT_THREADING=ON -DESCARGOT_TCO=ON -DESCARGOT_TEST=ON -G Ninja -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DCMAKE_BUILD_TYPE=release
+#        CMake --build out/ --config Release
+#    # windows internal ICU doesn't support Temporal and intl402 well
+#    # github action windows runner only have 2 CPUs. that's why I disable Atomics(timeout occured with some tests)
+#    - name: Run test262
+#      run: |
+#        set GC_FREE_SPACE_DIVISOR=1
+#        pip install chardet
+#        python tools\run-tests.py --engine=%cd%\out\escargot.exe test262 --test262-extra-arg="--skip Temporal --skip intl402 --skip Atomics --skip sm"
+#      shell: cmd
+#    - name: Run octane
+#      run: |
+#        copy test\octane\*.js
+#        dir
+#        .\out\escargot.exe run.js
+#    - if: ${{ failure() }}
+#      uses: mxschmitt/action-tmate@v3
+#      timeout-minutes: 15
+#
+#  build-on-windows-x64-uwp-x86-shared:
+#    runs-on: windows-2022
+#    steps:
+#    - name: Set git cllf config
+#      run: |
+#        git config --global core.autocrlf input
+#        git config --global core.eol lf
+#    - uses: actions/checkout@v4
+#      with:
+#        submodules: true
+#    - uses: lukka/get-cmake@latest
+#      with:
+#        cmakeVersion: "~3.25.0"  # <--= optional, use most recent 3.25.x version
+#    - uses: GuillaumeFalourd/setup-windows10-sdk-action@v2
+#      with:
+#        sdk-version: 20348
+#    - uses: ilammy/msvc-dev-cmd@v1.13.0
+#      with:
+#        arch: x64
+#        sdk: "10.0.20348.0"
+#        uwp: true
+#    - name: Build x64 UWP Release
+#      run: |
+#        CMake -G "Visual Studio 17 2022" -DCMAKE_SYSTEM_NAME=WindowsStore -DCMAKE_SYSTEM_VERSION:STRING="10.0" -DCMAKE_SYSTEM_PROCESSOR=x64 -Bout/win64_release_uwp/ -DESCARGOT_OUTPUT=shell -DESCARGOT_LIBICU_SUPPORT=ON -DESCARGOT_TEST=ON
+#        CMake --build out\win64_release_uwp --config Release
+#      shell: cmd
+#    - uses: ilammy/msvc-dev-cmd@v1.13.0
+#      with:
+#        arch: x86
+#        sdk: "10.0.20348.0"
+#    - name: Build x86 DLL Release
+#      run: |
+#        CMake -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_VERSION:STRING="10.0" -DCMAKE_SYSTEM_PROCESSOR=x86 -Bout/win32_release_shared/ -DESCARGOT_OUTPUT=shared_lib -DESCARGOT_LIBICU_SUPPORT=ON -DESCARGOT_THREADING=ON -DESCARGOT_TCO=ON -DESCARGOT_TEST=ON -G Ninja -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DCMAKE_BUILD_TYPE=release
+#        CMake --build out/win32_release_shared --config Release
+#      shell: cmd
+#    - if: ${{ failure() }}
+#      uses: mxschmitt/action-tmate@v3
+#      timeout-minutes: 15
+#
+#  build-test-on-x86-release:
+#    runs-on: ubuntu-22.04
+#    strategy:
+#      matrix:
+#        tc: ['new-es octane', 'v8 chakracore spidermonkey', 'jetstream-only-simple-parallel-1', 'jetstream-only-simple-parallel-2 jsc-stress', 'jetstream-only-simple-parallel-3 jetstream-only-cdjs']
+#    steps:
+#    - uses: actions/checkout@v4
+#      with:
+#        submodules: true
+#    - name: Install Packages
+#      run: |
+#        sudo apt-get update
+#        sudo apt-get install -y ninja-build gcc-multilib g++-multilib python2
+#        # set python2
+#        sudo update-alternatives --install /usr/bin/python python /usr/bin/python2 1
+#    - name: Install ICU
+#      run: |
+#        wget http://mirrors.kernel.org/ubuntu/pool/main/i/icu/libicu-dev_70.1-2ubuntu1_i386.deb
+#        wget http://mirrors.kernel.org/ubuntu/pool/main/i/icu/libicu70_70.1-2ubuntu1_i386.deb
+#        dpkg -X libicu-dev_70.1-2ubuntu1_i386.deb $GITHUB_WORKSPACE/icu32
+#        dpkg -X libicu70_70.1-2ubuntu1_i386.deb $GITHUB_WORKSPACE/icu32
+#    - name: Build x86
+#      env:
+#        BUILD_OPTIONS: -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=x86 -DESCARGOT_THREADING=ON -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TLS_ACCESS_BY_ADDRESS=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
+#      run: |
+#        export CXXFLAGS="-I$GITHUB_WORKSPACE/icu32/usr/include"
+#        export LDFLAGS="-L$GITHUB_WORKSPACE/icu32/usr/lib/i386-linux-gnu -Wl,-rpath=$GITHUB_WORKSPACE/icu32/usr/lib/i386-linux-gnu"
+#        export PKG_CONFIG_PATH=$GITHUB_WORKSPACE/icu32/usr/lib/i386-linux-gnu/pkgconfig
+#        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/release/x86 $BUILD_OPTIONS
+#        ninja -Cout/release/x86
+#    - name: Run release-x86 test
+#      env:
+#        GC_FREE_SPACE_DIVISOR: 1
+#      run: LD_LIBRARY_PATH=$GITHUB_WORKSPACE/icu32/usr/lib/i386-linux-gnu $RUNNER --arch=x86 --engine="$GITHUB_WORKSPACE/out/release/x86/escargot" ${{ matrix.tc }}
+#    - if: ${{ failure() }}
+#      uses: mxschmitt/action-tmate@v3
+#      timeout-minutes: 15
+#
+#  build-test-on-x64-release:
+#    runs-on: ubuntu-22.04
+#    strategy:
+#      matrix:
+#        tc: ['octane v8 web-tooling-benchmark', 'chakracore spidermonkey new-es']
+#        build_opt: ['', '-DESCARGOT_THREADING=ON -DESCARGOT_TCO=ON', '-DESCARGOT_SMALL_CONFIG=ON -DESCARGOT_USE_CUSTOM_LOGGING=ON']
+#        exclude:
+#          # exclude octane, v8, web-tooling-benchmark due to low performance incurred by SMALL_CONFIG
+#          - tc: 'octane v8 web-tooling-benchmark'
+#            build_opt: '-DESCARGOT_SMALL_CONFIG=ON -DESCARGOT_USE_CUSTOM_LOGGING=ON'
+#    steps:
+#    - uses: actions/checkout@v4
+#      with:
+#        submodules: true
+#    - name: Install Packages
+#      run: |
+#        sudo apt-get update
+#        sudo apt-get install -y ninja-build libicu-dev python2
+#        sudo update-alternatives --install /usr/bin/python python /usr/bin/python2 1
+#    - name: Build x64
+#      env:
+#        BUILD_OPTIONS: -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TLS_ACCESS_BY_ADDRESS=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
+#      run: |
+#        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/release/x64 $BUILD_OPTIONS ${{ matrix.build_opt }}
+#        ninja -Cout/release/x64
+#    - name: Run release-x64 test
+#      env:
+#        GC_FREE_SPACE_DIVISOR: 1
+#      run: |
+#        # set locale
+#        sudo locale-gen en_US.UTF-8
+#        export LANG=en_US.UTF-8
+#        locale
+#        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/release/x64/escargot" ${{ matrix.tc }}
+#    - if: ${{ failure() }}
+#      uses: mxschmitt/action-tmate@v3
+#      timeout-minutes: 15
+#
+#  build-test-on-x86-x64-debug:
+#    runs-on: ubuntu-latest
+#    steps:
+#    - uses: actions/checkout@v4
+#      with:
+#        submodules: true
+#    - name: Install Packages
+#      run: |
+#        # for i386 ICU
+#        sudo dpkg --add-architecture i386
+#        sudo apt-get update
+#        sudo apt-get install -y ninja-build gcc-multilib g++-multilib
+#        sudo apt-get install -y libicu-dev:i386 # install i386 ICU
+#    - name: Build x86/x64
+#      env:
+#        BUILD_OPTIONS_X86: -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=x86 -DESCARGOT_MODE=debug -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TLS_ACCESS_BY_ADDRESS=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
+#        BUILD_OPTIONS_X64: -DESCARGOT_MODE=debug -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TLS_ACCESS_BY_ADDRESS=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
+#      run: |
+#        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/debug/x86 $BUILD_OPTIONS_X86
+#        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/debug/x64 $BUILD_OPTIONS_X64
+#        ninja -Cout/debug/x86
+#        ninja -Cout/debug/x64
+#    - name: Run debug-mode test
+#      run: |
+#        $RUNNER --arch=x86 --engine="$GITHUB_WORKSPACE/out/debug/x86/escargot" modifiedVendorTest regression-tests new-es intl sunspider-js
+#        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/debug/x64/escargot" modifiedVendorTest regression-tests new-es intl sunspider-js
+#
+#  build-test-on-self-hosted-linux:
+#    runs-on: [self-hosted, linux, x64]
+#    timeout-minutes: 60
+#    steps:
+#    - uses: actions/checkout@v4
+#      with:
+#        submodules: true
+#    - name: Build
+#      env:
+#        BUILD_OPTIONS: -DESCARGOT_THREADING=ON -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TLS_ACCESS_BY_ADDRESS=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
+#      run: |
+#        LDFLAGS=" -L/usr/icu77-32/lib/ -Wl,-rpath=/usr/icu77-32/lib/" PKG_CONFIG_PATH="/usr/icu77-32/lib/pkgconfig/" cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H./ -Bbuild/out_linux -DESCARGOT_ARCH=x86 -DESCARGOT_MODE=debug -DESCARGOT_TCO_DEBUG=ON $BUILD_OPTIONS
+#        LDFLAGS=" -L/usr/icu77-32/lib/ -Wl,-rpath=/usr/icu77-32/lib/" PKG_CONFIG_PATH="/usr/icu77-32/lib/pkgconfig/" cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H./ -Bbuild/out_linux_release -DESCARGOT_ARCH=x86 $BUILD_OPTIONS
+#        gcc -shared -m32 -fPIC -o backtrace-hooking-32.so tools/test/test262/backtrace-hooking.c
+#        LDFLAGS=" -L/usr/icu77-64/lib/ -Wl,-rpath=/usr/icu77-64/lib/" PKG_CONFIG_PATH="/usr/icu77-64/lib/pkgconfig/" cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H./ -Bbuild/out_linux64 -DESCARGOT_ARCH=x64 -DESCARGOT_MODE=debug -DESCARGOT_TCO_DEBUG=ON $BUILD_OPTIONS
+#        LDFLAGS=" -L/usr/icu77-64/lib/ -Wl,-rpath=/usr/icu77-64/lib/" PKG_CONFIG_PATH="/usr/icu77-64/lib/pkgconfig/" cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H./ -Bbuild/out_linux64_release -DESCARGOT_ARCH=x64 -DESCARGOT_MODE=release $BUILD_OPTIONS
+#        cmake --build build/out_linux/
+#        cmake --build build/out_linux64/
+#        cmake --build build/out_linux_release/
+#        cmake --build build/out_linux64_release/
+#    - name: Test
+#      run: |
+#        LD_LIBRARY_PATH=/usr/icu77-32/lib/ GC_FREE_SPACE_DIVISOR=1 $RUNNER --arch=x86 --engine="${{ github.workspace }}/build/out_linux_release/escargot" test262
+#        LD_LIBRARY_PATH=/usr/icu77-32/lib/ GC_FREE_SPACE_DIVISOR=1 ESCARGOT_LD_PRELOAD=${{ github.workspace }}/backtrace-hooking-32.so $RUNNER --arch=x86 --engine="${{ github.workspace }}/build/out_linux/escargot" test262
+#        LD_LIBRARY_PATH=/usr/icu77-64/lib/ GC_FREE_SPACE_DIVISOR=1 $RUNNER --arch=x86_64 --engine="${{ github.workspace }}/build/out_linux64_release/escargot" test262
+#        LD_LIBRARY_PATH=/usr/icu77-64/lib/ python tools/kangax/run-kangax.py --engine="${{ github.workspace }}/build/out_linux64/escargot"
+#
+#  build-test-on-self-hosted-arm-linux:
+#    runs-on: [self-hosted, linux, arm]
+#    timeout-minutes: 60
+#    steps:
+#    - uses: actions/checkout@v4
+#      with:
+#        submodules: true
+#    - name: Build
+#      run: |
+#        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H./ -Bout -DCMAKE_C_COMPILER=gcc-11 -DCMAKE_CXX_COMPILER=g++-11 -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=arm32 -DESCARGOT_MODE=release -DESCARGOT_THREADING=ON -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TLS_ACCESS_BY_ADDRESS=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
+#        cmake --build ./out/
+#    - name: Test
+#      run: |
+#        GC_FREE_SPACE_DIVISOR=1 $RUNNER --engine="${{ github.workspace }}/out/escargot" --test262-extra-arg="--skip intl402 --skip sm" new-es v8 spidermonkey chakracore test262
+#
+#  build-test-on-self-hosted-arm64-linux:
+#    runs-on: [self-hosted, linux, arm64]
+#    timeout-minutes: 60
+#    steps:
+#    - uses: actions/checkout@v4
+#      with:
+#        submodules: true
+#    - name: Build
+#      run: |
+#        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H./ -Bout -DESCARGOT_MODE=release -DESCARGOT_THREADING=ON -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
+#        cmake --build ./out/
+#    - name: Test
+#      run: |
+#        GC_FREE_SPACE_DIVISOR=1 $RUNNER --engine="${{ github.workspace }}/out/escargot" --test262-extra-arg="--skip intl402 --skip sm" test262 chakracore spidermonkey v8 new-es
+#
+#  build-test-on-riscv64-release:
+#    runs-on: ubuntu-latest
+#    steps:
+#    - uses: actions/checkout@v4
+#      with:
+#        submodules: true
+#    - name: Build in riscv64 container
+#      uses: uraimo/run-on-arch-action@v2.8.1
+#      with:
+#        arch: riscv64
+#        distro: ubuntu22.04
+#
+#        # Install deps into the container. With the token, the container will be cached
+#        # The image is cached publically like a package
+#        githubToken: ${{ github.token }}
+#
+#        install: |
+#          apt-get update
+#          apt-get install -y cmake build-essential ninja-build pkg-config python3 git libicu-dev
+#        run: |
+#          cmake -H. -Bout/riscv64 -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
+#          ninja -Cout/riscv64
+#          python3 ./tools/run-tests.py --engine="./out/riscv64/escargot" regression-tests new-es intl sunspider-js
+#
+#  build-test-debugger:
+#    runs-on: ubuntu-latest
+#    steps:
+#    - uses: actions/checkout@v4
+#      with:
+#        submodules: true
+#    - name: Install Packages
+#      run: |
+#        sudo apt-get update
+#        sudo apt-get install -y ninja-build
+#    - name: Build
+#      env:
+#        BUILD_OPTIONS: -DESCARGOT_MODE=debug -DESCARGOT_DEBUGGER=1 -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
+#      run: |
+#        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/debugger $BUILD_OPTIONS
+#        ninja -Cout/debugger
+#    - name: Debugger Test
+#      run: |
+#        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/debugger/escargot" debugger-server-source
+#        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/debugger/escargot" debugger-client-source
+#
+#  build-test-api:
+#    runs-on: ubuntu-latest
+#    steps:
+#    - uses: actions/checkout@v4
+#      with:
+#        submodules: true
+#    - name: Install Packages
+#      run: |
+#        sudo apt-get update
+#        sudo apt-get install -y ninja-build gcc-multilib g++-multilib
+#    - name: Build x86/x64
+#      env:
+#        BUILD_OPTIONS_X86: -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=x86 -DESCARGOT_MODE=debug -DESCARGOT_THREADING=ON -DESCARGOT_DEBUGGER=1 -DESCARGOT_USE_EXTENDED_API=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=cctest -GNinja
+#        BUILD_OPTIONS_X64: -DESCARGOT_MODE=debug -DESCARGOT_THREADING=1 -DESCARGOT_DEBUGGER=1 -DESCARGOT_USE_EXTENDED_API=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=cctest -GNinja
+#      run: |
+#        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/cctest/x86 $BUILD_OPTIONS_X86
+#        ninja -Cout/cctest/x86
+#        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/cctest/x64 $BUILD_OPTIONS_X64
+#        ninja -Cout/cctest/x64
+#    - name: Run Test
+#      run: |
+#        $RUNNER --arch=x86 --engine="$GITHUB_WORKSPACE/out/cctest/x86/cctest" cctest
+#        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/cctest/x64/cctest" cctest
+#
+#  build-test-codecache:
+#    runs-on: ubuntu-latest
+#    steps:
+#    - uses: actions/checkout@v4
+#      with:
+#        submodules: true
+#    - name: Install Packages
+#      run: |
+#        # for i386 ICU
+#        sudo dpkg --add-architecture i386
+#        sudo apt-get update
+#        sudo apt-get install -y ninja-build gcc-multilib g++-multilib
+#        sudo apt-get install -y libicu-dev:i386 # install i386 ICU
+#    - name: Build x86
+#      env:
+#        BUILD_OPTIONS: -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=x86 -DESCARGOT_MODE=debug -DESCARGOT_CODE_CACHE=ON -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
+#      run: |
+#        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/codecache/x86 $BUILD_OPTIONS
+#        ninja -Cout/codecache/x86
+#    - name: Build x64
+#      env:
+#        BUILD_OPTIONS: -DESCARGOT_MODE=debug -DESCARGOT_CODE_CACHE=ON -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
+#      run: |
+#        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/codecache/x64 $BUILD_OPTIONS
+#        ninja -Cout/codecache/x64
+#    - name: Build x64 Release Mode
+#      env:
+#        BUILD_OPTIONS: -DESCARGOT_MODE=release -DESCARGOT_CODE_CACHE=ON -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
+#      run: |
+#        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/codecache/release/x64 $BUILD_OPTIONS
+#        ninja -Cout/codecache/release/x64
+#    - name: Run x86 test
+#      run: |
+#        $RUNNER --arch=x86 --engine="$GITHUB_WORKSPACE/out/codecache/x86/escargot" sunspider-js
+#        $RUNNER --arch=x86 --engine="$GITHUB_WORKSPACE/out/codecache/x86/escargot" sunspider-js
+#        $RUNNER --arch=x86 --engine="$GITHUB_WORKSPACE/out/codecache/x86/escargot" new-es
+#        $RUNNER --arch=x86 --engine="$GITHUB_WORKSPACE/out/codecache/x86/escargot" new-es
+#        $RUNNER --arch=x86 --engine="$GITHUB_WORKSPACE/out/codecache/x86/escargot" octane-loading
+#        $RUNNER --arch=x86 --engine="$GITHUB_WORKSPACE/out/codecache/x86/escargot" octane-loading
+#        rm -rf $HOME/Escargot-cache/
+#    - name: Run x64 test
+#      run: |
+#        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/codecache/x64/escargot" sunspider-js
+#        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/codecache/x64/escargot" sunspider-js
+#        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/codecache/x64/escargot" new-es
+#        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/codecache/x64/escargot" new-es
+#        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/codecache/x64/escargot" octane-loading
+#        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/codecache/x64/escargot" octane-loading
+#        rm -rf $HOME/Escargot-cache/
+#    - name: Run x64 release test
+#      run: |
+#        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/codecache/release/x64/escargot" web-tooling-benchmark
+#        rm -rf $HOME/Escargot-cache/
+#    - name: Handle error cases
+#      run: |
+#        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/codecache/x64/escargot" sunspider-js
+#        rm $HOME/Escargot-cache/2728638815_17149
+#        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/codecache/x64/escargot" sunspider-js
+#        ls -1q $HOME/Escargot-cache/ | wc -l
+#        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/codecache/x64/escargot" sunspider-js
+#        rm $HOME/Escargot-cache/cache_list
+#        $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/codecache/x64/escargot" sunspider-js
+#    - if: ${{ failure() }}
+#      uses: mxschmitt/action-tmate@v3
+#      timeout-minutes: 15
+#
+#  build-test-wasmjs:
+#    runs-on: ubuntu-latest
+#    steps:
+#    - uses: actions/checkout@v4
+#      with:
+#        submodules: recursive
+#    - name: Install Packages
+#      run: |
+#        sudo apt-get update
+#        sudo apt-get install -y ninja-build gcc-multilib g++-multilib
+#    - name: Build x86
+#      env:
+#        BUILD_OPTIONS: -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=x86 -DESCARGOT_MODE=debug -DESCARGOT_WASM=ON -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
+#      run: |
+#        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/wasm/x86 $BUILD_OPTIONS
+#        ninja -Cout/wasm/x86
+#    - name: Build x64
+#      env:
+#        BUILD_OPTIONS: -DESCARGOT_MODE=debug -DESCARGOT_WASM=ON -DESCARGOT_TEMPORAL=ON -DESCARGOT_TCO=ON -DESCARGOT_TEST=ON -DESCARGOT_OUTPUT=shell -GNinja
+#      run: |
+#        cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -H. -Bout/wasm/x64 $BUILD_OPTIONS
+#        ninja -Cout/wasm/x64
+#    - name: Run x86 test
+#      run: $RUNNER --arch=x86 --engine="$GITHUB_WORKSPACE/out/wasm/x86/escargot" wasm-js
+#    - name: Run x64 test
+#      run: $RUNNER --arch=x86_64 --engine="$GITHUB_WORKSPACE/out/wasm/x64/escargot" wasm-js
+#    - if: ${{ failure() }}
+#      uses: mxschmitt/action-tmate@v3
+#      timeout-minutes: 60
