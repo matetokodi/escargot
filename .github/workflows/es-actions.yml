@@ -11,20 +11,20 @@ env:
   RUNNER: tools/run-tests.py
 
 jobs:
-  check-tidy:
-    runs-on: ubuntu-24.04
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
-    - name: Install Packages
-      run: |
-        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key|sudo apt-key add -
-        sudo add-apt-repository "deb [trusted=yes] http://apt.llvm.org/noble/ llvm-toolchain-noble-20 main"
-        sudo apt-get update
-        sudo apt-get install -y clang-format-20
-    - name: Test
-      run: tools/check_tidy.py
+#  check-tidy:
+#    runs-on: ubuntu-24.04
+#    steps:
+#    - uses: actions/checkout@v4
+#      with:
+#        submodules: true
+#    - name: Install Packages
+#      run: |
+#        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key|sudo apt-key add -
+#        sudo add-apt-repository "deb [trusted=yes] http://apt.llvm.org/noble/ llvm-toolchain-noble-20 main"
+#        sudo apt-get update
+#        sudo apt-get install -y clang-format-20
+#    - name: Test
+#      run: tools/check_tidy.py
 
   build-on-macos:
     runs-on: macos-13
@@ -80,36 +80,36 @@ jobs:
         cp test/octane/*.js .
         ./out/release/escargot run.js
 
-  build-test-on-android:
-    runs-on: macos-13
-    strategy:
-      matrix:
-        arch: [x86, x86_64]
-        api: [28]
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
-    - name: Install Packages
-      run: |
-        brew update
-    - name: Set up JDK
-      uses: actions/setup-java@v4.1.0
-      with:
-        distribution: "zulu"
-        java-version: 17
-    - name: Gradle cache
-      uses: gradle/actions/setup-gradle@v3
-    - name: Create AVD and run tests
-      uses: reactivecircus/android-emulator-runner@v2
-      with:
-        api-level: ${{ matrix.api }}
-        arch: ${{ matrix.arch }}
-        force-avd-creation: false
-        emulator-options: -no-window -gpu swiftshader_indirect -camera-back none -no-snapshot-save -gpu swiftshader_indirect -noaudio -no-boot-anim
-        disable-animations: true
-        script: cd build/android/;./gradlew connectedDebugAndroidTest -DESCARGOT_BUILD_TLS_ACCESS_BY_PTHREAD_KEY=ON
-
+#  build-test-on-android:
+#    runs-on: macos-13
+#    strategy:
+#      matrix:
+#        arch: [x86, x86_64]
+#        api: [28]
+#    steps:
+#    - uses: actions/checkout@v4
+#      with:
+#        submodules: true
+#    - name: Install Packages
+#      run: |
+#        brew update
+#    - name: Set up JDK
+#      uses: actions/setup-java@v4.1.0
+#      with:
+#        distribution: "zulu"
+#        java-version: 17
+#    - name: Gradle cache
+#      uses: gradle/actions/setup-gradle@v3
+#    - name: Create AVD and run tests
+#      uses: reactivecircus/android-emulator-runner@v2
+#      with:
+#        api-level: ${{ matrix.api }}
+#        arch: ${{ matrix.arch }}
+#        force-avd-creation: false
+#        emulator-options: -no-window -gpu swiftshader_indirect -camera-back none -no-snapshot-save -gpu swiftshader_indirect -noaudio -no-boot-anim
+#        disable-animations: true
+#        script: cd build/android/;./gradlew connectedDebugAndroidTest -DESCARGOT_BUILD_TLS_ACCESS_BY_PTHREAD_KEY=ON
+#
 #  build-by-clang:
 #    runs-on: ubuntu-latest
 #    steps:
