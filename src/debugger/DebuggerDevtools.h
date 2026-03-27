@@ -76,6 +76,9 @@ private:
     bool enableRuntime(rapidjson::Document& jsonMessage);
     bool enableProfiler(rapidjson::Document& jsonMessage);
     bool setPauseOnExceptions(rapidjson::Document& jsonMessage);
+    bool setBreakpointsActive(rapidjson::Document& jsonMessage);
+    bool setBreakpointByUrl(rapidjson::Document& jsonMessage);
+    bool sendPossibleBreakpoints(rapidjson::Document& jsonMessage);
     bool replyMethodNotFound(rapidjson::Document& jsonMessage);
 
     uint8_t registerScript(String* url, String* source);
@@ -85,6 +88,7 @@ private:
     bool m_runtimeEnabled = false;
     bool m_profilerEnabled = false;
     bool m_pauseOnExceptions = false;
+    bool m_setBreakpointsActive = false;
 
     std::unordered_map<uint8_t, ScriptInfo> m_scriptsById;
     std::unordered_map<std::string, uint8_t> m_scriptIdByUrl;

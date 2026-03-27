@@ -312,6 +312,37 @@ bool DebuggerDevtools::setPauseOnExceptions(rapidjson::Document& jsonMessage)
     return replyOK(jsonMessage);
 }
 
+bool DebuggerDevtools::setBreakpointsActive(rapidjson::Document& jsonMessage)
+{
+    this->m_setBreakpointsActive = jsonMessage["params"]["active"].GetBool();
+    return replyOK(jsonMessage);
+}
+
+bool DebuggerDevtools::setBreakpointByUrl(rapidjson::Document& jsonMessage)
+{
+    const std::string breakpointFile = jsonMessage["params"]["url"].GetString();
+    const int breakpointLineNumber = jsonMessage["params"]["lineNumber"].GetInt();
+    const int breakpointColumnNumber = jsonMessage["params"]["columnNumber"].GetInt();
+    const std::string breakpointCondition = jsonMessage["params"]["condition"].GetString();
+
+    if (!breakpointCondition.empty()) {
+        ESCARGOT_LOG_ERROR("Warning: Breakpoint conditions are not supported!");
+    }
+
+    // TODO: get list of breakpoint bytecodes for the current file/function (also use this info for sendPossibleBreakpoints)
+    // TODO: match up file name and line number
+    // TODO: do the same thing as DebuggerEscargot/process_events/ESCARGOT_MESSAGE_UPDATE_BREAKPOINT
+
+    // TODO: implement this
+    return replyMethodNotFound(jsonMessage);
+}
+
+bool DebuggerDevtools::sendPossibleBreakpoints(rapidjson::Document& jsonMessage)
+{
+    // TODO: implement this
+    return replyMethodNotFound(jsonMessage);
+}
+
 bool DebuggerDevtools::replyMethodNotFound(rapidjson::Document& jsonMessage)
 {
     char reply[256];
@@ -334,10 +365,13 @@ bool DebuggerDevtools::processEvents(ExecutionState* state, Optional<ByteCodeBlo
     // NOTE: keep sorted
     static constexpr MessageType messageTypes[] = {
         messageType("Debugger.enable", &DebuggerDevtools::enableDebugger),
+        // messageType("Debugger.getPossibleBreakpoints", &DebuggerDevtools::sendPossibleBreakpoints),
         messageType("Debugger.getScriptSource", &DebuggerDevtools::sendSourceCode),
         messageType("Debugger.resume", &DebuggerDevtools::resume),
         messageType("Debugger.setAsyncCallStackDepth", &DebuggerDevtools::replyOK), // we may be able to set something for this one
         messageType("Debugger.setBlackboxPatterns", &DebuggerDevtools::replyOK), // we ignore this for now, but if needed set skipSourceName in DebuggerTcp
+        messageType("Debugger.setBreakpointByUrl", &DebuggerDevtools::setBreakpointByUrl),
+        messageType("Debugger.setBreakpointsActive", &DebuggerDevtools::setBreakpointsActive),
         messageType("Debugger.setPauseOnExceptions", &DebuggerDevtools::setPauseOnExceptions),
         messageType("Network.clearAcceptedEncodingsOverride", &DebuggerDevtools::replyMethodNotFound),
         messageType("Network.emulateNetworkConditionsByRule", &DebuggerDevtools::replyMethodNotFound),
