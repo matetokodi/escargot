@@ -31,38 +31,6 @@
 
 namespace Escargot {
 
-static std::string jsonEscape(const LChar* src, size_t len)
-{
-    std::string out;
-    out.reserve(len + 16);
-
-    for (size_t i = 0; i < len; ++i) {
-        LChar c = src[i];
-        switch (c) {
-        case '\"':
-            out += "\\\"";
-            break;
-        case '\\':
-            out += "\\\\";
-            break;
-        case '\n':
-            out += "\\n";
-            break;
-        case '\r':
-            out += "\\r";
-            break;
-        case '\t':
-            out += "\\t";
-            break;
-        default:
-            out += c;
-            break;
-        }
-    }
-
-    return out;
-}
-
 static void computeEndLocation(const LChar* src, size_t length, uint32_t& endLine, uint32_t& endColumn)
 {
     for (size_t i = 0; i < length; i++) {
@@ -137,20 +105,23 @@ std::string DebuggerDevtoolsMessageBuilder::buildSourceCodeMessage(const uint8_t
     }
 
     const LChar* sourceCode = source->characters8();
-    size_t sourceCodeLength = source->length();
-    // Special characters in source code must be escaped.
-    std::string escapedSource = jsonEscape(sourceCode, sourceCodeLength);
+    const size_t sourceCodeLength = source->length();
+
+    rapidjson::StringBuffer sb;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
+    writer.String(reinterpret_cast<const rapidjson::Writer<rapidjson::GenericStringBuffer<rapidjson::UTF8<>>>::Ch*>(sourceCode), sourceCodeLength);
+    const std::string escaped = sb.GetString();
 
     // FIXME: buffer size depends on length of source.
     char buffer[4096];
-    int written = snprintf(buffer, sizeof(buffer),
+    const int written = snprintf(buffer, sizeof(buffer),
                            "{\"id\":%u,"
                            "\"result\":{"
-                           "\"scriptSource\":\"%s\""
+                           "\"scriptSource\":%s"
                            "}"
                            "}",
                            requestId,
-                           escapedSource.c_str());
+                           escaped.c_str());
 
     if (written < 0 || static_cast<size_t>(written) >= sizeof(buffer)) {
         return {};
