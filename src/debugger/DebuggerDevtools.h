@@ -49,6 +49,7 @@ public:
     }
 
     bool sendMessage(const std::string& msg, const int length = -1);
+    bool sendJSONDocument(const rapidjson::Document& document);
     void init(const char* options, Context* context) override;
     bool skipSourceCode(String* srcName) const override;
 
@@ -61,7 +62,7 @@ public:
     bool getWaitBeforeExitClient() override;
 
 
-    void sendPausedEvent(ByteCodeBlock* byteCodeBlock, uint32_t offset, ExecutionState* state);
+    void sendPausedEvent(ByteCodeBlock* byteCodeBlock, uint32_t offset, ExecutionState* state, bool breakpoint = false);
 
 protected:
     bool processEvents(ExecutionState* state, Optional<ByteCodeBlock*> byteCodeBlock, bool isBlockingRequest = true) override;
@@ -78,6 +79,7 @@ private:
     bool setPauseOnExceptions(rapidjson::Document& jsonMessage);
     bool setBreakpointsActive(rapidjson::Document& jsonMessage);
     bool setBreakpointByUrl(rapidjson::Document& jsonMessage);
+    bool removeBreakpoint(rapidjson::Document& jsonMessage);
     bool sendPossibleBreakpoints(rapidjson::Document& jsonMessage);
     bool replyMethodNotFound(rapidjson::Document& jsonMessage);
 
@@ -88,11 +90,12 @@ private:
     bool m_runtimeEnabled = false;
     bool m_profilerEnabled = false;
     bool m_pauseOnExceptions = false;
-    bool m_setBreakpointsActive = false;
+    bool m_breakpointsActive = false;
 
     std::unordered_map<uint8_t, ScriptInfo> m_scriptsById;
     std::unordered_map<std::string, uint8_t> m_scriptIdByUrl;
     uint8_t m_nextScriptId = 1;
+    std::unordered_map<uint8_t, BreakpointByteCodeLocationVector> m_breakpointInfo;
 
     std::vector<std::string> m_pendingMessages;
 };

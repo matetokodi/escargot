@@ -24,7 +24,6 @@
 #include "Escargot.h"
 
 #include "runtime/String.h" // for split function
-#include "interpreter/ByteCode.h"
 #include "rapidjson/document.h"
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"

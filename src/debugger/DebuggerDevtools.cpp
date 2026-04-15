@@ -22,8 +22,9 @@
 #include "DebuggerDevtools.h"
 #include "DebuggerHttpRouter.h"
 #include "DebuggerDevtoolsMessageBuilder.h"
-
 #include "interpreter/ByteCode.h"
+#include "parser/Script.h"
+
 #include "rapidjson/document.h"
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
@@ -40,8 +41,23 @@ bool DebuggerDevtools::sendMessage(const std::string& msg, const int length)
         return true;
     }
 
-    ESCARGOT_LOG_INFO("Sending message: %s\n", msg.c_str());
-    return send(0, msg.c_str(), length == -1 ? msg.length() : length);
+    bool result = send(0, msg.c_str(), length == -1 ? msg.length() : length);
+    if (result) {
+        ESCARGOT_LOG_INFO("Sent message: %s\n", msg.c_str());
+    } else {
+        ESCARGOT_LOG_ERROR("Error sending message!");
+    }
+    return result;
+}
+
+bool DebuggerDevtools::sendJSONDocument(const rapidjson::Document& document)
+{
+    rapidjson::StringBuffer sb;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
+    document.Accept(writer);
+    const char* jsonReplyString = sb.GetString();
+
+    return sendMessage(jsonReplyString);
 }
 
 void DebuggerDevtools::init(const char* options, Context* context)
@@ -83,7 +99,7 @@ uint8_t DebuggerDevtools::registerScript(String* source, String* srcName)
     return newId;
 }
 
-void DebuggerDevtools::parseCompleted(String* source, String* srcName, size_t originLineOffset, String* error)
+void DebuggerDevtools::parseCompleted(String* source, String* srcName, const size_t originLineOffset, String* error)
 {
     if (!enabled()) {
         return;
@@ -94,44 +110,85 @@ void DebuggerDevtools::parseCompleted(String* source, String* srcName, size_t or
         return;
     }
 
-    uint8_t scriptId = registerScript(source, srcName);
+    const uint8_t scriptId = registerScript(source, srcName);
+    auto breakpointLocationsVector = BreakpointByteCodeLocationVector();
+
+    const size_t breakpointLocationsSize = m_breakpointLocationsVector.size();
+
+    if (originLineOffset > 0) {
+        for (size_t i = 0; i < breakpointLocationsSize; i++) {
+            // adjust line offset for manipulated source code
+            // inserted breakpoint's line info should be bigger than `originLineOffset`
+            BreakpointLocationVector& locationVector = m_breakpointLocationsVector[i]->breakpointLocations;
+            for (auto& j : locationVector) {
+                ASSERT(j.line > originLineOffset);
+                j.line -= originLineOffset;
+            }
+        }
+    }
+
+    for (size_t i = 0; i < breakpointLocationsSize; i++) {
+        /* function bytecode information */
+        InterpretedCodeBlock* codeBlock = reinterpret_cast<InterpretedCodeBlock*>(m_breakpointLocationsVector[i]->weakCodeRef);
+        uint8_t* byteCodeStart = codeBlock->byteCodeBlock()->m_code.data();
+
+        /* save breakpoint locations. */
+        BreakpointLocationVector breakpointLocations = m_breakpointLocationsVector[i]->breakpointLocations;
+        const size_t length = m_breakpointLocationsVector[i]->breakpointLocations.size();
+        for (auto& breakpointLocation : breakpointLocations) {
+            breakpointLocationsVector.emplace_back(breakpointLocation.line, reinterpret_cast<ByteCode*>(byteCodeStart + breakpointLocation.offset));
+        }
+        m_breakpointInfo.emplace(scriptId, breakpointLocationsVector);
+    }
 
     sendMessage(DebuggerDevtoolsMessageBuilder::buildScriptParsedMessage(scriptId, source, srcName));
 }
 
-void DebuggerDevtools::sendPausedEvent(ByteCodeBlock* byteCodeBlock, uint32_t offset, ExecutionState* state)
+void DebuggerDevtools::sendPausedEvent(ByteCodeBlock* byteCodeBlock, uint32_t offset, ExecutionState* state, bool breakpoint)
 {
-    // TODO: Placeholder info
-    const char* msg = "{\"method\":\"Debugger.paused\","
-                      "\"params\":{"
-                      "\"callFrames\":[{"
-                      "\"callFrameId\":\"frame:0\","
-                      "\"functionName\":\"\","
-                      "\"location\":{"
-                      "\"scriptId\":\"1\","
-                      "\"lineNumber\":0,"
-                      "\"columnNumber\":0"
-                      "},"
-                      "\"url\":\"hello.js\","
-                      "\"scopeChain\":[{"
-                      "\"type\":\"global\","
-                      "\"object\":{"
-                      "\"type\":\"object\","
-                      "\"className\":\"global\","
-                      "\"description\":\"global\","
-                      "\"objectId\":\"global:1\""
-                      "}"
-                      "}],"
-                      "\"this\":{"
-                      "\"type\":\"undefined\""
-                      "}"
-                      "}],"
-                      "\"reason\":\"breakpoint\","
-                      "\"hitBreakpoints\":[\"breakpoint:1\"]"
-                      "}"
-                      "}";
+    char buffer[4096];
 
-    sendMessage(msg);
+    const ExtendedNodeLOC codeLoc = byteCodeBlock->computeNodeLOC(byteCodeBlock->codeBlock()->src(), byteCodeBlock->codeBlock()->functionStart(), offset);
+    // TODO: maybe use breakpoint bytecodes' location data instead, may be more accurate
+
+    // TODO: Placeholder info
+    const int msgLen = snprintf(buffer, sizeof(buffer),
+                                "{\"method\":\"Debugger.paused\","
+                                "\"params\":{"
+                                "\"callFrames\":[{"
+                                "\"callFrameId\":\"frame:0\","
+                                "\"functionName\":\"%s\","
+                                "\"location\":{"
+                                "\"scriptId\":\"1\","
+                                "\"lineNumber\":%lu,"
+                                "\"columnNumber\":%lu"
+                                "},"
+                                "\"url\":\"%s\","
+                                "\"scopeChain\":[{"
+                                "\"type\":\"global\","
+                                "\"object\":{"
+                                "\"type\":\"object\","
+                                "\"className\":\"global\","
+                                "\"description\":\"global\","
+                                "\"objectId\":\"global:1\""
+                                "}"
+                                "}],"
+                                "\"this\":{"
+                                "\"type\":\"undefined\""
+                                "}"
+                                "}],"
+                                "\"reason\":\"%s\","
+                                "\"hitBreakpoints\":[]"
+                                "}"
+                                "}",
+                                reinterpret_cast<const char*>(byteCodeBlock->codeBlock()->functionName().string()->characters8()),
+                                codeLoc.line - 1, // chrome starts line indexes at 0
+                                codeLoc.column,
+                                reinterpret_cast<const char*>(byteCodeBlock->codeBlock()->script()->srcName()->characters8()),
+                                breakpoint ? "Breakpoint" : "Break on start");
+
+
+    sendMessage(buffer, msgLen);
 }
 
 void DebuggerDevtools::stopAtBreakpoint(ByteCodeBlock* byteCodeBlock, uint32_t offset, ExecutionState* state)
@@ -145,7 +202,7 @@ void DebuggerDevtools::stopAtBreakpoint(ByteCodeBlock* byteCodeBlock, uint32_t o
     }
 
     uint8_t* byteCodeStart = byteCodeBlock->m_code.data();
-    sendPausedEvent(byteCodeBlock, offset, state);
+    sendPausedEvent(byteCodeBlock, offset, state, true);
 
     if (!enabled()) {
         return;
@@ -255,19 +312,19 @@ bool DebuggerDevtools::sendSourceCode(rapidjson::Document& jsonMessage)
     const uint32_t requestId = jsonMessage["id"].GetUint();
     const uint32_t scriptId = std::stoi(jsonMessage["params"]["scriptId"].GetString());
 
-    auto it = m_scriptsById.find(scriptId);
+    const auto it = m_scriptsById.find(scriptId);
     if (it == m_scriptsById.end()) {
         return false;
     }
 
-    String* source = it->second.source;
+    const String* source = it->second.source;
 
     if (!source->is8Bit()) {
         ESCARGOT_LOG_ERROR("Only 8 bit characters are supported right now...");
         return false;
     }
 
-    std::string message = DebuggerDevtoolsMessageBuilder::buildSourceCodeMessage(requestId, source);
+    const std::string message = DebuggerDevtoolsMessageBuilder::buildSourceCodeMessage(requestId, source);
     return sendMessage(message);
 }
 
@@ -308,39 +365,178 @@ bool DebuggerDevtools::enableProfiler(rapidjson::Document& jsonMessage)
 
 bool DebuggerDevtools::setPauseOnExceptions(rapidjson::Document& jsonMessage)
 {
+    // TODO: handdle other parameters: state: none (unset), uncaught, caught, all
     this->m_pauseOnExceptions = true;
     return replyOK(jsonMessage);
 }
 
 bool DebuggerDevtools::setBreakpointsActive(rapidjson::Document& jsonMessage)
 {
-    this->m_setBreakpointsActive = jsonMessage["params"]["active"].GetBool();
+    this->m_breakpointsActive = jsonMessage["params"]["active"].GetBool();
     return replyOK(jsonMessage);
 }
 
 bool DebuggerDevtools::setBreakpointByUrl(rapidjson::Document& jsonMessage)
 {
-    const std::string breakpointFile = jsonMessage["params"]["url"].GetString();
-    const int breakpointLineNumber = jsonMessage["params"]["lineNumber"].GetInt();
-    const int breakpointColumnNumber = jsonMessage["params"]["columnNumber"].GetInt();
-    const std::string breakpointCondition = jsonMessage["params"]["condition"].GetString();
+    // TODO: [x] get list of breakpoint bytecodes for the current file/function (also use this info for sendPossibleBreakpoints)
+    // TODO: [x] match up file name and line number
+    // TODO: [x] do the same thing as DebuggerEscargot/process_events/ESCARGOT_MESSAGE_UPDATE_BREAKPOINT
+    // TODO: [x] figure out why activating a breakpoint in devtools puts it in the wrong line
+    // TODO: [ ] figure out why activating a breakpoint in devtools makes in not be able to be removed
 
+    const std::string breakpointCondition = jsonMessage["params"]["condition"].GetString();
     if (!breakpointCondition.empty()) {
         ESCARGOT_LOG_ERROR("Warning: Breakpoint conditions are not supported!");
     }
 
-    // TODO: get list of breakpoint bytecodes for the current file/function (also use this info for sendPossibleBreakpoints)
-    // TODO: match up file name and line number
-    // TODO: do the same thing as DebuggerEscargot/process_events/ESCARGOT_MESSAGE_UPDATE_BREAKPOINT
+    std::string breakpointFile = jsonMessage["params"]["url"].GetString();
+    if (breakpointFile.find("file://") == 0) {
+        breakpointFile.erase(0, 7);
+    }
+    const uint8_t scriptId = this->m_scriptIdByUrl[breakpointFile];
 
-    // TODO: implement this
-    return replyMethodNotFound(jsonMessage);
+    const uint32_t lineNumber = jsonMessage["params"]["lineNumber"].GetUint() + 1; // chrome starts line indexes at 0
+
+    // const uint32_t columnNumber = jsonMessage["params"]["columnNumber"].GetUint();
+    // if (columnNumber != 0) {
+    //     ESCARGOT_LOG_ERROR("Warning! breakpoint column numbers not supported!\n");
+    // }
+
+    rapidjson::Document reply;
+    reply.SetObject();
+
+    rapidjson::Value resultObject(rapidjson::kObjectType);
+    rapidjson::Value resultArray(rapidjson::kArrayType);
+    rapidjson::Value breakpointID(rapidjson::kStringType);
+
+    reply.AddMember("id", jsonMessage["id"].GetInt(), reply.GetAllocator());
+    reply.AddMember("result", resultObject, reply.GetAllocator());
+    reply["result"].AddMember("locations", resultArray, reply.GetAllocator());
+
+    for (BreakpointByteCodeLocation breakpointInfo : m_breakpointInfo[scriptId]) {
+        if ((lineNumber == breakpointInfo.line)
+            || (reply["result"]["locations"].Empty() && breakpointInfo.line > lineNumber)) {
+            rapidjson::Value locationObject(rapidjson::kObjectType);
+            rapidjson::Value scriptIdString;
+
+            char scriptIdBuf[10];
+            const int scriptIdLength = snprintf(scriptIdBuf, sizeof(scriptIdBuf), "%d", scriptId);
+            scriptIdString.SetString(scriptIdBuf, scriptIdLength, reply.GetAllocator());
+
+            locationObject.AddMember("scriptId", scriptIdString, reply.GetAllocator());
+            locationObject.AddMember("lineNumber", breakpointInfo.line - 1, reply.GetAllocator());
+            locationObject.AddMember("columnNumber", 0, reply.GetAllocator());
+
+            reply["result"]["locations"].PushBack(locationObject, reply.GetAllocator());
+
+            char breakpointIDBuffer[256]; // this can potentially be too small (when the file name is very long, maybe we could consider just using numbers for breakpoint IDs?
+            const int breakpointIDLength = snprintf(breakpointIDBuffer, sizeof(breakpointIDBuffer), "%s:%d",breakpointFile.c_str(), breakpointInfo.line);
+            breakpointID.SetString(breakpointIDBuffer, breakpointIDLength, reply.GetAllocator());
+            reply["result"].AddMember("breakpointId", breakpointID, reply.GetAllocator());
+
+            /* Enable breakpoint */
+#if defined(ESCARGOT_COMPUTED_GOTO_INTERPRETER)
+            if (breakpointInfo.byteCode->m_opcodeInAddress != g_opcodeTable.m_addressTable[BreakpointDisabledOpcode]) {
+                break;
+            }
+            breakpointInfo.byteCode->m_opcodeInAddress = g_opcodeTable.m_addressTable[BreakpointEnabledOpcode];
+#else
+            if (breakpointInfo.byteCode->m_opcode != BreakpointDisabledOpcode) {
+                break;
+            }
+            breakpointInfo.byteCode->m_opcode = BreakpointEnabledOpcode;
+#endif
+            break;
+        }
+    }
+
+    return sendJSONDocument(reply);
+}
+
+bool DebuggerDevtools::removeBreakpoint(rapidjson::Document& jsonMessage)
+{
+    const std::string breakpointId = jsonMessage["params"]["breakpointId"].GetString();
+    const std::string breakpointFile = breakpointId.substr(0, breakpointId.find(':'));
+    const uint32_t lineNumber = stoi(breakpointId.substr(breakpointId.find(':'), breakpointId.length())) + 1; // chrome starts line indexes at 0
+    const uint8_t scriptId = this->m_scriptIdByUrl[breakpointFile];
+
+    for (BreakpointByteCodeLocation breakpointInfo : m_breakpointInfo[scriptId]) {
+        if (lineNumber == breakpointInfo.line) {
+            /* Disable breakpoint */
+#if defined(ESCARGOT_COMPUTED_GOTO_INTERPRETER)
+            if (breakpointInfo.byteCode->m_opcodeInAddress != g_opcodeTable.m_addressTable[BreakpointEnabledOpcode]) {
+                break;
+            }
+            breakpointInfo.byteCode->m_opcodeInAddress = g_opcodeTable.m_addressTable[BreakpointDisabledOpcode];
+#else
+            if (breakpointInfo.byteCode->m_opcode != BreakpointEnabledOpcode) {
+                break;
+            }
+            breakpointInfo.byteCode->m_opcode = BreakpointDisabledOpcode;
+#endif
+            break;
+        }
+    }
+
+    return replyOK(jsonMessage);
 }
 
 bool DebuggerDevtools::sendPossibleBreakpoints(rapidjson::Document& jsonMessage)
 {
-    // TODO: implement this
-    return replyMethodNotFound(jsonMessage);
+    if (jsonMessage["params"]["restrictToFunction"].GetBool()) {
+        ESCARGOT_LOG_ERROR("Warning: restrictToFunction is not supported\n");
+    }
+
+    const uint8_t scriptId = std::stoi(jsonMessage["params"]["start"]["scriptId"].GetString());
+
+    if (m_breakpointInfo.find(scriptId) == m_breakpointInfo.end()) {
+        ESCARGOT_LOG_ERROR("Script Id not found: %d", scriptId);
+        return replyOK(jsonMessage);
+    }
+
+    if (scriptId != std::stoi(jsonMessage["params"]["end"]["scriptId"].GetString())) {
+        ESCARGOT_LOG_ERROR("Error: Script ranges across multiple scripts not supported!\n");
+        return replyMethodNotFound(jsonMessage);
+    }
+
+    const uint32_t startLine = jsonMessage["params"]["start"]["lineNumber"].GetUint() + 1; // chrome starts line indexes at 0
+    const uint32_t startColumn = jsonMessage["params"]["start"]["columnNumber"].GetUint();
+    const uint32_t endLine = jsonMessage["params"]["end"]["lineNumber"].GetUint() + 1; // chrome starts line indexes at 0
+    const uint32_t endColumn = jsonMessage["params"]["end"]["columnNumber"].GetUint();
+
+    // if (startColumn != 0 || endColumn != 0) {
+    //     ESCARGOT_LOG_ERROR("Warning! breakpoint column numbers not supported!\n");
+    // }
+
+    rapidjson::Document reply;
+    reply.SetObject();
+
+    rapidjson::Value resultObject(rapidjson::kObjectType);
+    rapidjson::Value resultArray(rapidjson::kArrayType);
+
+    reply.AddMember("id", jsonMessage["id"].GetInt(), reply.GetAllocator());
+    reply.AddMember("result", resultObject, reply.GetAllocator());
+    reply["result"].AddMember("locations", resultArray, reply.GetAllocator());
+
+    for (BreakpointByteCodeLocation breakpointInfo : m_breakpointInfo[scriptId]) {
+        if ((startLine <= breakpointInfo.line && breakpointInfo.line <= endLine)
+            || (reply["result"]["locations"].Empty() && breakpointInfo.line > startLine && breakpointInfo.line > endLine)) {
+            rapidjson::Value locationObject(rapidjson::kObjectType);
+            rapidjson::Value scriptIdString;
+
+            char scriptIdBuf[10];
+            const int scriptIdLength = snprintf(scriptIdBuf, sizeof(scriptIdBuf), "%d", scriptId);
+            scriptIdString.SetString(scriptIdBuf, scriptIdLength, reply.GetAllocator());
+
+            locationObject.AddMember("scriptId", scriptIdString, reply.GetAllocator());
+            locationObject.AddMember("lineNumber", breakpointInfo.line - 1, reply.GetAllocator());
+            locationObject.AddMember("columnNumber", 0, reply.GetAllocator());
+
+            reply["result"]["locations"].PushBack(locationObject, reply.GetAllocator());
+        }
+    }
+
+    return sendJSONDocument(reply);
 }
 
 bool DebuggerDevtools::replyMethodNotFound(rapidjson::Document& jsonMessage)
@@ -365,8 +561,9 @@ bool DebuggerDevtools::processEvents(ExecutionState* state, Optional<ByteCodeBlo
     // NOTE: keep sorted
     static constexpr MessageType messageTypes[] = {
         messageType("Debugger.enable", &DebuggerDevtools::enableDebugger),
-        // messageType("Debugger.getPossibleBreakpoints", &DebuggerDevtools::sendPossibleBreakpoints),
+        messageType("Debugger.getPossibleBreakpoints", &DebuggerDevtools::sendPossibleBreakpoints),
         messageType("Debugger.getScriptSource", &DebuggerDevtools::sendSourceCode),
+        messageType("Debugger.removeBreakpoint", &DebuggerDevtools::removeBreakpoint),
         messageType("Debugger.resume", &DebuggerDevtools::resume),
         messageType("Debugger.setAsyncCallStackDepth", &DebuggerDevtools::replyOK), // we may be able to set something for this one
         messageType("Debugger.setBlackboxPatterns", &DebuggerDevtools::replyOK), // we ignore this for now, but if needed set skipSourceName in DebuggerTcp
@@ -382,7 +579,7 @@ bool DebuggerDevtools::processEvents(ExecutionState* state, Optional<ByteCodeBlo
         messageType("Profiler.enable", &DebuggerDevtools::enableProfiler),
         messageType("Runtime.enable", &DebuggerDevtools::enableRuntime),
         messageType("Runtime.getProperties", &DebuggerDevtools::sendProperties),
-        messageType("Runtime.runIfWaitingForDebugger", &DebuggerDevtools::resume),
+        messageType("Runtime.runIfWaitingForDebugger", &DebuggerDevtools::replyOK),
     };
 
     while (true) {

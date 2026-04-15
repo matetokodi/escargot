@@ -25,6 +25,8 @@
 #ifdef ESCARGOT_DEBUGGER
 namespace Escargot {
 
+class ByteCode;
+
 #define ESCARGOT_DEBUGGER_MAX_STACK_TRACE_LENGTH 8
 
 /* WebSocket max length encoded in one byte. */
@@ -57,7 +59,19 @@ public:
         uint32_t offset; // bytecode offset
     };
 
+    struct BreakpointByteCodeLocation {
+        BreakpointByteCodeLocation(const uint32_t line, ByteCode* breakpointByteCode)
+            : line(line)
+            , byteCode(breakpointByteCode)
+        {
+        }
+
+        uint32_t line; // source code line
+        ByteCode* byteCode; // bytecode pointer
+    };
+
     typedef std::vector<BreakpointLocation> BreakpointLocationVector;
+    typedef std::vector<BreakpointByteCodeLocation> BreakpointByteCodeLocationVector;
 
     struct BreakpointLocationsInfo {
         BreakpointLocationsInfo(WeakCodeRef* weakCodeRef)
