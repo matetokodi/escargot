@@ -504,6 +504,28 @@ static size_t containerSize(ExecutionState* state, const Value value)
     if (object->isWeakSetObject()) {
         return object->asWeakSetObject()->storage().size();
     }
+    if (object->isSetIteratorObject()) {
+        // Return number of remaining elements
+        const SetIteratorObject* setIterObj = object->asIteratorObject()->asSetIteratorObject();
+        size_t setSize;
+        if (setIterObj->set().hasValue()) {
+            setSize = setIterObj->set().value()->size();
+        } else {
+            setSize = setIterObj->iteratorIndex();
+        }
+        return setSize - setIterObj->iteratorIndex();
+    }
+    if (object->isMapIteratorObject()) {
+        // Return number of remaining elements
+        const MapIteratorObject* mapIterObj = object->asIteratorObject()->asMapIteratorObject();
+        size_t mapSize;
+        if (mapIterObj->map().hasValue()) {
+            mapSize = mapIterObj->map().value()->size();
+        } else {
+            mapSize = mapIterObj->iteratorIndex();
+        }
+        return mapSize - mapIterObj->iteratorIndex();
+    }
 
     return 0;
 }
@@ -679,6 +701,7 @@ rapidjson::Value DebuggerDevtools::generatePreview(ExecutionState* state, const 
         }
 
         if (containerSize(state, value) > m_arrayPreviewListingMaxSize) {
+            result.AddMember("overflow", true, allocator);
             return result;
         }
 
