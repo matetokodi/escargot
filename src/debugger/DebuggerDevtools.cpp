@@ -2090,9 +2090,9 @@ bool DebuggerDevtools::evaluate(rapidjson::Document& jsonMessage, ExecutionState
     }
 
     const char* source = jsonMessage["params"]["expression"].GetString();
-    size_t sourceLen = jsonMessage["params"]["expression"].GetStringLength();
+    const size_t sourceLen = jsonMessage["params"]["expression"].GetStringLength();
 
-    Value evalExpression(new Latin1String(source, sourceLen));
+    const Value evalExpression(new Latin1String(source, sourceLen));
     Value result(Value::ForceUninitialized);
 
     m_stopState = ESCARGOT_DEBUGGER_IN_EVAL_MODE;
@@ -2112,64 +2112,7 @@ bool DebuggerDevtools::evaluate(rapidjson::Document& jsonMessage, ExecutionState
     reply.AddMember("id", jsonMessage["id"], reply.GetAllocator());
     reply.AddMember("result", rapidjson::Value(rapidjson::kObjectType), reply.GetAllocator());
 
-    auto resultObj = rapidjson::Value(rapidjson::kObjectType);
-
-    if (result.isString()) {
-        resultObj.AddMember("type", "string", reply.GetAllocator());
-
-        auto str = std::string(result.asString()->toUTF8StringData().data());
-        resultObj.AddMember("value", stringToRapidjsonValue(str, reply.GetAllocator()), reply.GetAllocator());
-        resultObj.AddMember("description", stringToRapidjsonValue(str, reply.GetAllocator()), reply.GetAllocator());
-    } else if (result.isNumber()) {
-        std::string description;
-        if (result.isDouble()) {
-            description = std::to_string(result.asDouble());
-        } else {
-            description = std::to_string(result.asInt32());
-        }
-
-        resultObj.AddMember("type", "number", reply.GetAllocator());
-        resultObj.AddMember("value", result.asNumber(), reply.GetAllocator());
-        resultObj.AddMember("description", stringToRapidjsonValue(description, reply.GetAllocator()), reply.GetAllocator());
-    } else if (result.isBigInt()) {
-        std::string str = result.asBigInt()->toString()->toUTF8StringData().data();
-
-        resultObj.AddMember("type", "bigint", reply.GetAllocator());
-        resultObj.AddMember("value", stringToRapidjsonValue(str, reply.GetAllocator()), reply.GetAllocator());
-        resultObj.AddMember("description", stringToRapidjsonValue(str, reply.GetAllocator()), reply.GetAllocator());
-    } else if (result.isUndefined()) {
-        resultObj.AddMember("type", "undefined", reply.GetAllocator());
-    } else if (result.isObject()) {
-        Object* resObj = result.asObject();
-
-        if (resObj->isArray(*state)) {
-            rapidjson::Value arrayDescription;
-
-            if (result.toStringWithoutException(*state) != nullptr) {
-                UTF8StringData arrayStr = result.toStringWithoutException(*state)->toUTF8StringData();
-                arrayDescription = stringToRapidjsonValue("Array: [" + std::string(arrayStr.data(), arrayStr.length()) + "]", reply.GetAllocator());
-            }
-
-            resultObj.AddMember("type", "array", reply.GetAllocator());
-            resultObj.AddMember("className", "Array", reply.GetAllocator());
-            resultObj.AddMember("description", arrayDescription, reply.GetAllocator());
-        } else {
-            rapidjson::Value objectDescription;
-
-            if (result.toStringWithoutException(*state) != nullptr) {
-                UTF8StringData objectStr = result.toStringWithoutException(*state)->toUTF8StringData();
-                objectDescription = stringToRapidjsonValue("Object: " + std::string(objectStr.data(), objectStr.length()), reply.GetAllocator());
-            }
-            resultObj.AddMember("type", "object", reply.GetAllocator());
-            resultObj.AddMember("className", "Object", reply.GetAllocator());
-            resultObj.AddMember("description", objectDescription, reply.GetAllocator());
-        }
-    } else {
-        auto msg = "Could not determine result type of expression!";
-        consoleOut(String::fromUTF8(msg, std::strlen(msg)));
-        return true;
-    }
-    reply["result"].AddMember("result", resultObj, reply.GetAllocator());
+    reply["result"].AddMember("result", jsValueToJsonValueObj(state, result, reply.GetAllocator()), reply.GetAllocator());
 
     sendJSONDocument(reply);
 
