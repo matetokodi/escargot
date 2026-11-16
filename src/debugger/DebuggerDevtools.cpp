@@ -2197,6 +2197,7 @@ bool DebuggerDevtools::evalOnObject(rapidjson::Document& jsonMessage, ExecutionS
         if (m_verboseLogging) {
             ESCARGOT_LOG_ERROR("Eval on object failed: object reference is null\n");
         }
+        sendJSONDocument(reply);
         return true;
     }
 
@@ -2265,24 +2266,27 @@ bool DebuggerDevtools::evalOnObject(rapidjson::Document& jsonMessage, ExecutionS
     try {
         m_debuggerGlobalObject->eval(*m_debuggerGlobalState, evalExpression);
         functionObj = m_debuggerGlobalObject->eval(*m_debuggerGlobalState, String::fromASCII(functionName.c_str(), functionName.length()));
-        printf("Eval res: %s\n", functionObj.toStringWithoutException(*state)->toUTF8StringData().data());
     } catch (const Value& val) {
-        functionObj = val;
-        printf("Eval res: %s\n", functionObj.toStringWithoutException(*state)->toUTF8StringData().data());
         if (m_verboseLogging) {
-            ESCARGOT_LOG_ERROR("Evaluating function failed: %s", functionObj.toStringWithoutException(*state)->toUTF8StringData().data());
+            ESCARGOT_LOG_ERROR("Evaluating function failed: %s", val.toStringWithoutException(*state)->toUTF8StringData().data());
         }
     }
     m_stopState = ESCARGOT_DEBUGGER_IN_WAIT_MODE;
 
-    const Value callResult = Object::call(*m_debuggerGlobalState, functionObj, targetObj, arguments.size(), arguments.data());
+    if (functionObj.isObject()
+        && (functionObj.asObject()->isFunctionObject()
+            || functionObj.asObject()->isScriptFunctionObject()
+            || functionObj.asObject()->isScriptArrowFunctionObject()
+            || functionObj.asObject()->isScriptSimpleFunctionObject())) {
+        const Value callResult = Object::call(*m_debuggerGlobalState, functionObj, targetObj, arguments.size(), arguments.data());
 
-    if (returnByValue) {
-        reply["result"].AddMember("result", rapidjson::Value(rapidjson::kObjectType), reply.GetAllocator());
-        reply["result"]["result"].AddMember("type", stringToRapidjsonValue(objectToStringTypeName(callResult), reply.GetAllocator()), reply.GetAllocator());
-        reply["result"]["result"].AddMember("value", jsValueToJsonValue(state, callResult, reply.GetAllocator()), reply.GetAllocator());
-    } else {
-        reply["result"].AddMember("result", jsValueToJsonValueObj(state, callResult, reply.GetAllocator()), reply.GetAllocator());
+        if (returnByValue) {
+            reply["result"].AddMember("result", rapidjson::Value(rapidjson::kObjectType), reply.GetAllocator());
+            reply["result"]["result"].AddMember("type", stringToRapidjsonValue(objectToStringTypeName(callResult), reply.GetAllocator()), reply.GetAllocator());
+            reply["result"]["result"].AddMember("value", jsValueToJsonValue(state, callResult, reply.GetAllocator()), reply.GetAllocator());
+        } else {
+            reply["result"].AddMember("result", jsValueToJsonValueObj(state, callResult, reply.GetAllocator()), reply.GetAllocator());
+        }
     }
 
     sendJSONDocument(reply);
