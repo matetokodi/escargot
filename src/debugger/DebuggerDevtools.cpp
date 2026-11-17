@@ -59,7 +59,7 @@
 namespace Escargot {
 
 template <typename... Args>
-std::string string_format(const std::string& format, Args... args)
+static std::string string_format(const std::string& format, Args... args)
 {
     const int size_s = std::snprintf(nullptr, 0, format.c_str(), args...) + 1; // Extra space for '\0'
     if (size_s <= 0) {
@@ -72,38 +72,11 @@ std::string string_format(const std::string& format, Args... args)
 }
 
 
-rapidjson::Value stringToRapidjsonValue(const std::string& value, rapidjson::MemoryPoolAllocator<>& allocator)
+static rapidjson::Value stringToRapidjsonValue(const std::string& value, rapidjson::MemoryPoolAllocator<>& allocator)
 {
     rapidjson::Value rapidjsonStringValue(rapidjson::kStringType);
     rapidjsonStringValue.SetString(value.c_str(), value.length(), allocator);
     return rapidjsonStringValue;
-}
-
-std::string objectToStringTypeName(const Value object)
-{
-    std::string objectType;
-    if (object.isSymbol()) {
-        objectType = "symbol";
-    } else if (object.isFunctionObject()) {
-        objectType = "function";
-    } else if (object.isUndefined()) {
-        objectType = "undefined";
-    } else if (object.isNull()) {
-        objectType = "object";
-    } else if (object.isString()) {
-        objectType = "string";
-    } else if (object.isNumber()) {
-        objectType = "number";
-    } else if (object.isBoolean()) {
-        objectType = "boolean";
-    } else if (object.isBigInt()) {
-        objectType = "bigint";
-    } else if (object.isObject()) {
-        objectType = "object";
-    } else {
-        objectType = "object"; // generic object, no subtype
-    }
-    return objectType;
 }
 
 static void addObjectProperties(ExecutionState* state, PropertyNameValueMap* values, Object* object)
@@ -169,24 +142,14 @@ static bool isErrorObject(const Value& val)
     return val.isPointerValue() && val.asPointerValue()->isErrorObject();
 }
 
-static std::string encodedValueToString(ExecutionState* state, const EncodedValue encodedValue)
-{
-    if (encodedValue.toValue<false>().isSymbol()) {
-        return encodedValue.toValue<false>().asSymbol()->symbolDescriptiveString()->toUTF8StringData().data();
-    }
-    if (encodedValue.toValue<false>().isObject()) {
-        return "Object";
-    }
-
-    return encodedValue.toValue<false>().toString(*state)->toUTF8StringData().data();
-}
-
-static rapidjson::Value encodedValueToJsonEntryItem(ExecutionState* state, const EncodedValue encodedValue, rapidjson::MemoryPoolAllocator<>& allocator)
+rapidjson::Value DebuggerDevtools::encodedValueToJsonEntryItem(ExecutionState* state, const EncodedValue encodedValue, rapidjson::MemoryPoolAllocator<>& allocator)
 {
     auto result = rapidjson::Value(rapidjson::kObjectType);
 
-    result.AddMember("description", stringToRapidjsonValue(encodedValueToString(state, encodedValue), allocator), allocator);
-    result.AddMember("type", stringToRapidjsonValue(objectToStringTypeName(encodedValue), allocator), allocator);
+    ObjectDescription description = generateDescription(state, encodedValue);
+
+    result.AddMember("description", stringToRapidjsonValue(description.description, allocator), allocator);
+    result.AddMember("type", stringToRapidjsonValue(description.type, allocator), allocator);
     result.AddMember("overflow", false, allocator);
     result.AddMember("properties", rapidjson::Value(rapidjson::kArrayType), allocator);
 
@@ -306,6 +269,14 @@ ObjectDescription DebuggerDevtools::generateObjectDescription(ExecutionState* st
     ITERATOR_DESCRIPTION(RegExpString);
 #undef ITERATOR_DESCRIPTION
 
+    if (object->isFunctionObject()) {
+        return {
+            .type = "function",
+            .subType = "",
+            .description = ""
+        };
+    }
+
 #if defined(ENABLE_WASM)
     if (object->isWASMMemoryObject()) {
         WASMMemoryObject* wasmMemObj = object->asWASMMemoryObject();
@@ -340,6 +311,27 @@ ObjectDescription DebuggerDevtools::generateObjectDescription(ExecutionState* st
 
 ObjectDescription DebuggerDevtools::generateDescription(ExecutionState* state, const Value& value)
 {
+    if (value.isNumber()) {
+        return {
+            .type = "number",
+            .subType = "",
+            .description = value.toString(*state)->toUTF8StringData().data()
+        };
+    }
+    if (value.isBoolean()) {
+        return {
+            .type = "boolean",
+            .subType = "",
+            .description = value.toString(*state)->toUTF8StringData().data()
+        };
+    }
+    if (value.isBigInt()) {
+        return {
+            .type = "bigint",
+            .subType = "",
+            .description = value.toString(*state)->toUTF8StringData().data()
+        };
+    }
     if (value.isSymbol()) {
         return {
             .type = "symbol",
@@ -711,7 +703,7 @@ rapidjson::Value DebuggerDevtools::generatePreview(ExecutionState* state, const 
         for (auto property : *properties) {
             auto propertyItem = rapidjson::Value(rapidjson::kObjectType);
             propertyItem.AddMember("name", stringToRapidjsonValue(property.first.string()->toUTF8StringData().data(), allocator), allocator);
-            propertyItem.AddMember("type", stringToRapidjsonValue(objectToStringTypeName(property.second), allocator), allocator);
+            propertyItem.AddMember("type", stringToRapidjsonValue(generateDescription(state, property.second).type, allocator), allocator);
 
             std::string valueString;
             if (property.second.isSymbol()) {
@@ -843,7 +835,7 @@ rapidjson::Value DebuggerDevtools::jsValueToJsonValueObj(ExecutionState* state, 
 
     const ObjectDescription description = generateDescription(state, value);
 
-    result.AddMember("type", stringToRapidjsonValue(objectToStringTypeName(value), allocator), allocator);
+    result.AddMember("type", stringToRapidjsonValue(description.type, allocator), allocator);
     if (value.isUndefined()) {
         return result;
     }
@@ -1295,7 +1287,7 @@ void DebuggerDevtools::parseCompleted(String* source, String* srcName, const siz
 
     for (size_t i = 0; i < breakpointLocationsSize; i++) {
         /* function bytecode information */
-        InterpretedCodeBlock* codeBlock = reinterpret_cast<InterpretedCodeBlock*>(m_breakpointLocationsVector[i]->weakCodeRef);
+        auto* codeBlock = reinterpret_cast<InterpretedCodeBlock*>(m_breakpointLocationsVector[i]->weakCodeRef);
         uint8_t* byteCodeStart = codeBlock->byteCodeBlock()->m_code.data();
 
         /* save breakpoint locations. */
@@ -1869,7 +1861,7 @@ bool DebuggerDevtools::setPauseOnExceptions(rapidjson::Document& jsonMessage)
     return replyOK(jsonMessage);
 }
 
-void setBreakpointState(ByteCode* breakpoint, const bool enabled)
+static void setBreakpointState(ByteCode* breakpoint, const bool enabled)
 {
 #if defined(ESCARGOT_COMPUTED_GOTO_INTERPRETER)
     if (enabled) {
@@ -2066,7 +2058,7 @@ bool DebuggerDevtools::takeHeapSnapshot(rapidjson::Document& jsonMessage, Execut
         abort();
     }
 
-    const uint16_t bufferSize = 4096 * 4;
+    constexpr uint16_t bufferSize = 4096 * 4;
     char buffer[bufferSize];
     while (!file.eof()) {
         file.read(buffer, bufferSize);
@@ -2248,7 +2240,7 @@ bool DebuggerDevtools::evalOnObject(rapidjson::Document& jsonMessage, ExecutionS
 
         if (returnByValue) {
             reply["result"].AddMember("result", rapidjson::Value(rapidjson::kObjectType), reply.GetAllocator());
-            reply["result"]["result"].AddMember("type", stringToRapidjsonValue(objectToStringTypeName(callResult), reply.GetAllocator()), reply.GetAllocator());
+            reply["result"]["result"].AddMember("type", stringToRapidjsonValue(generateDescription(state, callResult).type, reply.GetAllocator()), reply.GetAllocator());
             reply["result"]["result"].AddMember("value", jsValueToJsonValue(state, callResult, reply.GetAllocator()), reply.GetAllocator());
         } else {
             reply["result"].AddMember("result", jsValueToJsonValueObj(state, callResult, reply.GetAllocator()), reply.GetAllocator());
@@ -2272,7 +2264,7 @@ MESSAGE_TYPE(1);
 MESSAGE_TYPE(2);
 MESSAGE_TYPE(3);
 
-bool DebuggerDevtools::processEvents(ExecutionState* state, Optional<ByteCodeBlock*> byteCodeBlock, bool isBlockingRequest)
+bool DebuggerDevtools::processEvents(ExecutionState* state, const Optional<ByteCodeBlock*> byteCodeBlock, const bool isBlockingRequest)
 {
     uint8_t buffer[ESCARGOT_WS_MAX_MESSAGE_LENGTH];
     size_t length;

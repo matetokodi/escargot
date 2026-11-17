@@ -73,7 +73,7 @@ typedef struct {
 
 class DebuggerDevtools : public DebuggerTcp {
 public:
-    DebuggerDevtools(EscargotSocket socket, String* skipSource, const bool verbose = false)
+    DebuggerDevtools(const EscargotSocket socket, String* skipSource, const bool verbose = false)
         : DebuggerTcp(socket, skipSource, ESCARGOT_WS_BUFFER_SIZE, ESCARGOT_DEBUGGER_WEBSOCKET_TEXT_FRAME)
         , m_verboseLogging(verbose)
     {
@@ -125,6 +125,7 @@ private:
 
     uint32_t registerValuesMap(Object* object, PropertyNameValueMap* newPropertyMap, PropertyNameValueMap* newInternalPropertyMap);
     PropertyMaps getObjectPropertyMaps(uint32_t objectId);
+    static rapidjson::Value encodedValueToJsonEntryItem(ExecutionState* state, EncodedValue encodedValue, rapidjson::MemoryPoolAllocator<>& allocator);
     static ObjectDescription generateObjectDescription(ExecutionState* state, Object* object);
     static ObjectDescription generateDescription(ExecutionState* state, const Value& object);
     static rapidjson::Value generatePreview(ExecutionState* state, const Value& value, const ObjectDescription& description, rapidjson::MemoryPoolAllocator<>& allocator);
